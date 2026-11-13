@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f7a4a">
+  <meta name="description" content="Gestion des crédits clients pour boutiques et commerces du Burkina Faso, avec rappels WhatsApp et SMS.">
+  <title>Crédit Boutique</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">₣</span>
+      <div>
+        <h1 id="shopTitle">Crédit Boutique</h1>
+        <small>Carnet de crédit · Burkina Faso</small>
+      </div>
+    </div>
+  </header>
+
+  <main id="app">
+    <!-- Tableau de bord -->
+    <section class="view active" id="view-dashboard">
+      <div class="stats">
+        <div class="stat stat-main">
+          <span class="stat-label">Total à encaisser</span>
+          <strong id="statTotal">0 FCFA</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Clients débiteurs</span>
+          <strong id="statDebtors">0</strong>
+        </div>
+        <div class="stat warn">
+          <span class="stat-label">En retard</span>
+          <strong id="statLate">0</strong>
+        </div>
+        <div class="stat good">
+          <span class="stat-label">Encaissé ce mois</span>
+          <strong id="statMonth">0 FCFA</strong>
+        </div>
+      </div>
+
+      <div class="quick">
+        <button class="btn credit" data-action="new-credit">+ Nouveau crédit</button>
+        <button class="btn success" data-action="new-payment">+ Encaissement</button>
+      </div>
+
+      <h2>Plus gros reliquats</h2>
+      <ul class="list" id="topDebtors"></ul>
+
+      <h2>Dernières opérations</h2>
+      <ul class="list" id="recentTx"></ul>
+    </section>
+
+    <!-- Clients -->
+    <section class="view" id="view-clients">
+      <div class="toolbar">
+        <input type="search" id="clientSearch" placeholder="Rechercher un client (nom, téléphone)…" autocomplete="off">
+        <select id="clientFilter" aria-label="Filtrer">
+          <option value="all">Tous</option>
+          <option value="debt">Avec reliquat</option>
+          <option value="late">En retard</option>
+          <option value="clear">Soldés</option>
+        </select>
+      </div>
+      <button class="btn primary block" data-action="new-client">+ Ajouter un client</button>
+      <ul class="list" id="clientList"></ul>
+    </section>
+
+    <!-- Rappels -->
+    <section class="view" id="view-reminders">
+      <p class="hint">Clients ayant un reliquat. Ceux en retard (échéance dépassée) sont en premier. Touchez WhatsApp ou SMS : le message est déjà rédigé, il suffit de l'envoyer.</p>
+      <ul class="list" id="reminderList"></ul>
+    </section>
+
+    <!-- Paramètres -->
+    <section class="view" id="view-settings">
+      <form id="settingsForm" class="card form">
+        <h2>Ma boutique</h2>
+        <label>Nom de la boutique
+          <input name="shopName" required placeholder="Ex : Boutique Wendkouni">
+        </label>
+        <label>Nom du gérant
+          <input name="ownerName" placeholder="Ex : Francis">
+        </label>
+        <label>Téléphone / Orange Money / Moov Money
+          <input name="phone" type="tel" inputmode="tel" placeholder="Ex : 70 12 34 56">
+        </label>
+        <label>Délai de paiement par défaut (jours)
+          <input name="defaultDays" type="number" min="0" step="1">
+        </label>
+        <label>Message de rappel
+          <textarea name="template" rows="6"></textarea>
+        </label>
+        <p class="hint">Mots-clés remplacés automatiquement : <code>{client}</code> <code>{montant}</code> <code>{boutique}</code> <code>{echeance}</code> <code>{telephone}</code> <code>{gerant}</code></p>
+        <button class="btn primary block" type="submit">Enregistrer</button>
+      </form>
+
+      <div class="card form">
+        <h2>Sauvegarde</h2>
+        <p class="hint">Les données restent sur ce téléphone. Faites une sauvegarde régulière pour ne rien perdre (changement de téléphone, nettoyage du navigateur…).</p>
+        <button class="btn block" data-action="export">Télécharger une sauvegarde</button>
+        <label class="btn block file-btn">Restaurer une sauvegarde
+          <input type="file" id="importFile" accept="application/json,.json" hidden>
+        </label>
+        <button class="btn block" data-action="paste-backup">Coller une sauvegarde (texte)</button>
+        <button class="btn block" data-action="export-csv">Exporter en tableau (CSV / Excel)</button>
+        <button class="btn danger block" data-action="reset">Tout effacer</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Navigation">
+    <button class="tab active" data-view="dashboard"><span>🏠</span>Accueil</button>
+    <button class="tab" data-view="clients"><span>👥</span>Clients</button>
+    <button class="tab" data-view="reminders"><span>🔔</span>Rappels<em id="reminderBadge" hidden></em></button>
+    <button class="tab" data-view="settings"><span>⚙️</span>Réglages</button>
+  </nav>
+
+  <!-- Fenêtre modale générique -->
+  <div class="modal" id="modal" hidden>
+    <div class="modal-backdrop" data-action="close-modal"></div>
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <button class="modal-close" data-action="close-modal" aria-label="Fermer">×</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <div class="modal confirm" id="confirmBox" hidden>
+    <div class="modal-backdrop" data-action="close-confirm"></div>
+    <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmMsg">
+      <p id="confirmMsg"></p>
+      <div class="grid-actions">
+        <button class="btn" data-action="close-confirm">Annuler</button>
+        <button class="btn danger" id="confirmYes">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
