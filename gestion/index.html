@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#8a4b0f">
+  <meta name="description" content="Caisse, stock, crédits clients, dépenses et bénéfices pour buvettes, maquis et boutiques du Burkina Faso.">
+  <title>Caisse &amp; Crédit</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">🍺</span>
+      <div class="brand-text">
+        <h1 id="barTitle">Ma Buvette</h1>
+        <small id="barSub">Caisse · Stock · Crédits</small>
+      </div>
+      <button class="gear" data-action="open-settings" aria-label="Réglages">⚙️</button>
+    </div>
+  </header>
+
+  <main id="app">
+    <!-- Vendre -->
+    <section class="view active" id="view-sell">
+      <div class="today">
+        <div><span>Ventes du jour</span><strong id="todaySales">0 F</strong></div>
+        <div><span>Bénéfice du jour</span><strong id="todayProfit" class="pos">0 F</strong></div>
+        <div><span>Orange / Moov</span><strong id="todayMobile">0 F</strong></div>
+      </div>
+      <div class="chips sections" id="sectionChips"></div>
+      <p class="hint">Touchez un produit pour l'ajouter. Sous le nom : ❄ stock du frigo, 🧊 glace, 🎫 tickets Wi-Fi restants.</p>
+      <div class="grid" id="productGrid"></div>
+      <h2>Ventes d'aujourd'hui</h2>
+      <ul class="list" id="todayList"></ul>
+    </section>
+
+    <!-- Stock -->
+    <section class="view" id="view-stock">
+      <div class="stats">
+        <div class="stat"><span>Valeur du stock (prix d'achat)</span><strong id="stockValue">0 F</strong></div>
+        <div class="stat"><span>Bénéfice possible sur ce stock</span><strong id="stockMargin" class="pos">0 F</strong></div>
+      </div>
+      <div class="actions2" id="stockActions">
+        <button class="btn primary" data-action="restock">+ Approvisionnement</button>
+        <button class="btn cold" data-action="load-fridge">❄ Charger le frigo</button>
+        <button class="btn ice" data-action="produce" id="produceBtn">🧊 Production</button>
+        <button class="btn" data-action="inventory">Inventaire du bar</button>
+      </div>
+      <ul class="list" id="stockList"></ul>
+      <button class="btn block" data-action="new-product">+ Ajouter un produit</button>
+    </section>
+
+    <!-- Crédits -->
+    <section class="view" id="view-credits">
+      <div class="stats3">
+        <div class="stat main"><span>Crédits à encaisser</span><strong id="crTotal">0 F</strong></div>
+        <div class="stat"><span>Clients débiteurs</span><strong id="crDebtors">0</strong></div>
+        <div class="stat"><span>En retard</span><strong id="crLate" class="warn">0</strong></div>
+      </div>
+      <div class="actions2">
+        <button class="btn success" data-action="new-payment">+ Paiement reçu</button>
+        <button class="btn" data-action="new-manual-credit">+ Crédit (hors caisse)</button>
+      </div>
+      <div class="toolbar">
+        <input type="search" id="clientSearch" placeholder="Rechercher un client…" autocomplete="off" aria-label="Rechercher un client">
+        <select id="clientFilter" aria-label="Filtrer">
+          <option value="debt">À encaisser</option>
+          <option value="late">En retard</option>
+          <option value="all">Tous</option>
+          <option value="clear">Soldés</option>
+        </select>
+      </div>
+      <ul class="list" id="clientList"></ul>
+      <button class="btn block" data-action="new-client">+ Ajouter un client</button>
+    </section>
+
+    <!-- Dépenses -->
+    <section class="view" id="view-expenses">
+      <form id="expenseForm" class="card form">
+        <h2>Nouvelle dépense</h2>
+        <div class="row">
+          <label>Type<select name="category" id="expCategory"></select></label>
+          <label>Montant (F)<input name="amount" id="expAmount" required inputmode="numeric" placeholder="Ex : 1500"></label>
+        </div>
+        <label>Détail<input name="label" id="expLabel" placeholder="Ex : 1 plaquette d'œufs, 50 sachets…"></label>
+        <div class="row">
+          <label>Payé par<select name="payMode" id="expPay">
+            <option value="cash">Espèces</option><option value="om">Orange Money</option><option value="moov">Moov Money</option>
+          </select></label>
+          <label>Date<input name="date" id="expDate" type="date" required></label>
+        </div>
+        <button class="btn primary block" type="submit">Enregistrer la dépense</button>
+      </form>
+      <p class="hint" id="energyHint"></p>
+      <h2>Dépenses du mois <span id="expMonthTotal" class="muted"></span></h2>
+      <ul class="list" id="expenseList"></ul>
+    </section>
+
+    <!-- Bilan -->
+    <section class="view" id="view-report">
+      <div class="chips" id="periodChips">
+        <button data-period="today" class="chip active">Aujourd'hui</button>
+        <button data-period="yesterday" class="chip">Hier</button>
+        <button data-period="week" class="chip">7 jours</button>
+        <button data-period="month" class="chip">Ce mois</button>
+        <button data-period="lastmonth" class="chip">Mois dernier</button>
+        <button data-period="custom" class="chip">Dates…</button>
+      </div>
+      <div class="row custom-range" id="customRange" hidden>
+        <label>Du<input type="date" id="rangeFrom"></label>
+        <label>Au<input type="date" id="rangeTo"></label>
+      </div>
+      <div id="report"></div>
+    </section>
+
+    <!-- Réglages -->
+    <section class="view" id="view-settings">
+      <form id="settingsForm" class="card form">
+        <h2>Mon commerce</h2>
+        <label>Nom du commerce<input name="name" id="setName" required placeholder="Ex : Buvette Le Baobab"></label>
+        <label>Numéro Orange Money / Moov Money (pour les rappels)<input name="phone" id="setPhone" type="tel" inputmode="tel" placeholder="Ex : 70 12 34 56"></label>
+        <label>Source d'énergie
+          <select name="energy" id="setEnergy">
+            <option value="solaire">Solaire</option>
+            <option value="sonabel">Réseau SONABEL</option>
+            <option value="groupe">Groupe électrogène</option>
+            <option value="mixte">Solaire + SONABEL</option>
+          </select>
+        </label>
+        <div id="solarFields" class="sub">
+          <p class="hint">Avec le solaire, il n'y a pas de facture d'électricité. Pour connaître le vrai bénéfice, l'application peut compter chaque mois une part du prix de votre installation. Laissez vide si vous ne voulez pas.</p>
+          <div class="row">
+            <label>Prix de l'installation (F)<input name="solarCost" id="setSolarCost" inputmode="numeric" placeholder="Ex : 900000"></label>
+            <label>À répartir sur (mois)<input name="solarMonths" id="setSolarMonths" inputmode="numeric" placeholder="Ex : 60"></label>
+          </div>
+          <label>Facture SONABEL évitée par mois (estimation, F)<input name="solarSaved" id="setSolarSaved" inputmode="numeric" placeholder="Ex : 25000"></label>
+        </div>
+        <label>Délai de paiement des crédits (jours)<input name="defaultDays" id="setDays" type="number" min="0"></label>
+        <label>Autres types de dépenses (séparés par des virgules)<input name="extraCats" id="setExtraCats" placeholder="Ex : Musique, Chaises"></label>
+        <label>Message de rappel des crédits<textarea name="template" id="setTemplate" rows="5"></textarea></label>
+        <p class="hint">Mots remplacés automatiquement : {client} {montant} {boutique} {echeance} {telephone}</p>
+        <button class="btn primary block" type="submit">Enregistrer</button>
+      </form>
+      <div class="card form">
+        <h2>Sauvegarde</h2>
+        <p class="hint">Les données restent sur ce téléphone. Faites une sauvegarde chaque semaine et envoyez-la-vous sur WhatsApp.</p>
+        <button class="btn block" data-action="export">Faire une sauvegarde</button>
+        <label class="btn block file-btn">Restaurer depuis un fichier
+          <input type="file" id="importFile" accept="application/json,.json" hidden>
+        </label>
+        <button class="btn block" data-action="paste-backup">Restaurer depuis un texte copié</button>
+        <button class="btn block" data-action="export-csv">Exporter le journal (Excel / CSV)</button>
+        <button class="btn danger block" data-action="reset">Tout effacer</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Panier -->
+  <div class="cart" id="cart" hidden>
+    <ul id="cartLines"></ul>
+    <div class="paymodes" role="radiogroup" aria-label="Mode de paiement">
+      <button class="pm active" data-pay="cash">Espèces</button>
+      <button class="pm" data-pay="om">Orange M.</button>
+      <button class="pm" data-pay="moov">Moov M.</button>
+      <button class="pm" data-pay="credit">Crédit</button>
+    </div>
+    <div class="cart-foot">
+      <button class="btn" data-action="clear-cart">Vider</button>
+      <button class="btn success grow" data-action="checkout">Encaisser <b id="cartTotal">0 F</b></button>
+    </div>
+  </div>
+
+  <nav class="tabbar" aria-label="Navigation">
+    <button class="tab active" data-view="sell"><span>🍺</span>Vendre</button>
+    <button class="tab" data-view="stock"><span>📦</span>Stock<em id="stockBadge" hidden></em></button>
+    <button class="tab" data-view="credits"><span>📒</span>Crédits<em id="creditBadge" hidden></em></button>
+    <button class="tab" data-view="expenses"><span>💸</span>Dépenses</button>
+    <button class="tab" data-view="report"><span>📊</span>Bilan</button>
+  </nav>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-backdrop" data-action="close-modal"></div>
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <button class="modal-close" data-action="close-modal" aria-label="Fermer">×</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <div class="modal confirm" id="confirmBox" hidden>
+    <div class="modal-backdrop" data-action="close-confirm"></div>
+    <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmMsg">
+      <p id="confirmMsg"></p>
+      <div class="row">
+        <button class="btn" data-action="close-confirm">Annuler</button>
+        <button class="btn danger" id="confirmYes">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "Ma Buvette",
+  "short_name": "Buvette",
+  "description": "Stock, ventes, Orange Money, dépenses et bénéfices de la buvette",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f3ec",
+  "theme_color": "#8a4b0f",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

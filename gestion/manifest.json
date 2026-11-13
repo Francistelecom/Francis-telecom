@@ -1,0 +1,12 @@
+{
+  "name": "Caisse & Crédit",
+  "short_name": "Caisse",
+  "description": "Caisse, stock, crédits clients, dépenses et bénéfices",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f3ec",
+  "theme_color": "#8a4b0f",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
