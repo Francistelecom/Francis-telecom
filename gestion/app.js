@@ -22,7 +22,38 @@
     ['Castel', 'biere', 12], ['Flag', 'biere', 12], ['Guinness', 'biere', 24], ['Beaufort', 'biere', 24],
     ['Coca-Cola', 'sucrerie', 24], ['Fanta', 'sucrerie', 24], ['Sprite', 'sucrerie', 24], ['Eau minérale', 'eau', 12]
   ];
-  const ICE_PRODUCT = { id: 'glace', name: 'Glace (sachet)', cat: 'glace', source: 'fabrication', unit: 'sachet', perCrate: 1, buy: 0, sell: 0, alert: 0 };
+  const ICE_PRODUCT = { id: 'glace', name: 'Glace (sachet)', cat: 'glace', section: 'bar', source: 'fabrication', unit: 'sachet', perCrate: 1, buy: 0, sell: 0, alert: 0 };
+
+  // Activités du commerce : chacune a son rayon dans la caisse et sa ligne dans le bilan.
+  const SECTIONS = {
+    bar: { label: 'Bar', icon: '🍺' },
+    cuisine: { label: 'Cuisine', icon: '🍳' },
+    wifi: { label: 'Wi-Fi', icon: '📶' },
+    services: { label: 'Services', icon: '🔌' }
+  };
+  const mk = (id, name, section, source, unit, sell, alert) => ({ id, name, cat: section, section, source, unit, perCrate: 1, buy: 0, sell, alert: alert || 0 });
+  // Tickets Wi-Fi imprimés depuis le MikroTik : un stock de tickets par forfait.
+  const EXTRA_PRODUCTS = [
+    mk('cu-omelette', 'Omelette', 'cuisine', 'service', 'omelette', 0),
+    mk('cu-nescafe', 'Nescafé', 'cuisine', 'service', 'tasse', 0),
+    mk('cu-lipton', 'Lipton', 'cuisine', 'service', 'tasse', 0),
+    mk('wf-2h', 'Wi-Fi 2 heures', 'wifi', 'fabrication', 'ticket', 100, 10),
+    mk('wf-12h', 'Wi-Fi 12 heures', 'wifi', 'fabrication', 'ticket', 200, 10),
+    mk('wf-24h', 'Wi-Fi 24 heures', 'wifi', 'fabrication', 'ticket', 300, 10),
+    mk('wf-1s', 'Wi-Fi 1 semaine', 'wifi', 'fabrication', 'ticket', 1000, 5),
+    mk('wf-1m', 'Wi-Fi 1 mois', 'wifi', 'fabrication', 'ticket', 3000, 3),
+    mk('sv-recharge', 'Recharge téléphone', 'services', 'service', 'recharge', 0)
+  ];
+  const CATALOG_VERSION = 2;
+
+  // Dépenses rangées par activité ; « general » = charges communes à tout le commerce.
+  const EXPENSES_BY_SECTION = {
+    bar: ['Eau (ONEA / forage)', 'Sachets glace / emballages', 'Achat glace'],
+    cuisine: ['Œufs', 'Pain', 'Nescafé / Lipton / sucre / lait', 'Huile / oignons / condiments', 'Gaz / charbon'],
+    wifi: ['Abonnement internet', 'Papier / impression tickets', 'Matériel Wi-Fi (routeur, antenne)'],
+    services: ['Multiprises / chargeurs']
+  };
+  const OLD_CATEGORY_SECTION = { 'Sachets / emballages': 'bar', 'Salaire serveur': 'general' };
 
   // ---------- État ----------
   let fresh = false;
@@ -31,20 +62,21 @@
   let payMode = 'cash';
   let period = 'today';
   let currentView = 'sell';
+  let sellSection = 'all';
 
   function defaultSettings() {
     return {
       name: 'Ma Buvette', phone: '', energy: 'solaire',
       solarCost: 0, solarMonths: 0, solarSaved: 0,
-      defaultDays: 7, extraCats: '', template: DEFAULT_TEMPLATE
+      defaultDays: 7, extraCats: '', template: DEFAULT_TEMPLATE, catalog: 0
     };
   }
   function defaultState() {
     return {
-      settings: defaultSettings(),
+      settings: Object.assign(defaultSettings(), { catalog: CATALOG_VERSION }),
       products: DEFAULT_PRODUCTS.map(([name, cat, perCrate], i) => ({
-        id: 'p' + i, name, cat, source: 'achat', unit: 'bouteille', perCrate, buy: 0, sell: 0, alert: perCrate
-      })).concat([Object.assign({}, ICE_PRODUCT)]),
+        id: 'p' + i, name, cat, section: 'bar', source: 'achat', unit: 'bouteille', perCrate, buy: 0, sell: 0, alert: perCrate
+      })).concat([Object.assign({}, ICE_PRODUCT)], EXTRA_PRODUCTS.map(x => Object.assign({}, x))),
       clients: [],
       moves: []
     };
@@ -56,7 +88,15 @@
       clients: Array.isArray(d.clients) ? d.clients : [],
       moves: Array.isArray(d.moves) ? d.moves : []
     };
-    st.products.forEach(p => { p.source = p.source || 'achat'; p.unit = (!p.unit || p.unit === 'btl') ? 'bouteille' : p.unit; p.perCrate = p.perCrate || 1; });
+    st.products.forEach(p => {
+      p.source = p.source || 'achat'; p.unit = (!p.unit || p.unit === 'btl') ? 'bouteille' : p.unit;
+      p.perCrate = p.perCrate || 1; p.section = SECTIONS[p.section] ? p.section : 'bar';
+    });
+    // Ajoute une seule fois les nouvelles activités (cuisine, Wi-Fi, services) aux données existantes.
+    if ((st.settings.catalog || 0) < CATALOG_VERSION) {
+      EXTRA_PRODUCTS.forEach(x => { if (!st.products.some(q => q.id === x.id)) st.products.push(Object.assign({}, x)); });
+      st.settings.catalog = CATALOG_VERSION;
+    }
     return st;
   }
   function readJSON(key) {
@@ -119,6 +159,10 @@
   const client = id => state.clients.find(c => c.id === id);
   const cname = id => (client(id) || { name: '(client supprimé)' }).name;
   const isMade = p => p && p.source === 'fabrication';
+  const isService = p => p && p.source === 'service';
+  const isTicket = p => p && p.section === 'wifi' && isMade(p);
+  const secOf = p => (p && SECTIONS[p.section]) ? p.section : 'bar';
+  const secLabel = k => k === 'general' ? 'Charges communes' : SECTIONS[k].icon + ' ' + SECTIONS[k].label;
   const unitOf = p => (p && p.unit) || 'bouteille';
   // « 1 bouteille », « 3 bouteilles », « 2 sachets »
   const units = (n, p) => { const u = unitOf(p); return Math.abs(n) > 1 && !/[sx]$/.test(u) ? u + 's' : u; };
@@ -149,17 +193,25 @@
   const smsUrl = (phone, text) => 'sms:+' + normalizePhone(phone) + (/iPad|iPhone|iPod/.test(navigator.userAgent) ? '&' : '?') + 'body=' + encodeURIComponent(text);
 
   // ---------- Dépenses selon l'énergie ----------
-  function expenseCategories() {
-    const e = state.settings.energy;
-    const cats = [];
-    if (e === 'solaire' || e === 'mixte') cats.push('Entretien solaire', 'Batterie / panneau / onduleur');
-    if (e === 'sonabel' || e === 'mixte') cats.push('Électricité SONABEL');
-    if (e === 'groupe') cats.push('Carburant groupe', 'Entretien groupe');
-    cats.push('Eau (ONEA / forage)', 'Sachets / emballages', 'Achat glace', 'Loyer', 'Salaire serveur', 'Transport', 'Gaz / charbon', 'Taxes / mairie');
-    String(state.settings.extraCats || '').split(',').map(s => s.trim()).filter(Boolean).forEach(s => { if (cats.indexOf(s) === -1) cats.push(s); });
-    cats.push('Autre');
-    return cats;
+  const activeSections = () => Object.keys(SECTIONS).filter(k => state.products.some(p => secOf(p) === k));
+  // Groupes de dépenses : charges communes (énergie, loyer, salaires…) puis une liste par activité.
+  function expenseGroups() {
+    const e = state.settings.energy, general = [];
+    if (e === 'solaire' || e === 'mixte') general.push('Entretien solaire', 'Batterie / panneau / onduleur');
+    if (e === 'sonabel' || e === 'mixte') general.push('Électricité SONABEL');
+    if (e === 'groupe') general.push('Carburant groupe', 'Entretien groupe');
+    general.push('Loyer', 'Salaires (serveuses, cuisinière)', 'Transport', 'Taxes / mairie');
+    String(state.settings.extraCats || '').split(',').map(x => x.trim()).filter(Boolean).forEach(x => { if (general.indexOf(x) === -1) general.push(x); });
+    general.push('Autre');
+    const groups = [{ section: 'general', cats: general }];
+    activeSections().forEach(k => groups.push({ section: k, cats: EXPENSES_BY_SECTION[k] }));
+    return groups;
   }
+  function catSection(cat) {
+    for (const k in EXPENSES_BY_SECTION) if (EXPENSES_BY_SECTION[k].indexOf(cat) !== -1) return k;
+    return OLD_CATEGORY_SECTION[cat] || 'general';
+  }
+  const expSection = m => m.section || catSection(m.category);
   const hasSolar = () => state.settings.energy === 'solaire' || state.settings.energy === 'mixte';
 
   // ---------- Stock ----------
@@ -177,7 +229,7 @@
     });
     return s;
   }
-  const isLow = (p, st) => p.sell > 0 && p.alert > 0 && (st.reserve + st.fridge) <= p.alert;
+  const isLow = (p, st) => !isService(p) && p.sell > 0 && p.alert > 0 && (st.reserve + st.fridge) <= p.alert;
 
   // ---------- Crédits ----------
   function clientSummary(id) {
@@ -223,7 +275,9 @@
   function report(from, to) {
     const z = () => ({ cash: 0, om: 0, moov: 0 });
     const r = { ca: 0, cogs: 0, sales: 0, creditSales: 0, dep: 0, pertes: 0, ecart: 0, achats: 0, manualCredits: 0,
-      inBy: z(), collectBy: z(), outBy: z(), depBy: {}, prod: {}, moves: [] };
+      inBy: z(), collectBy: z(), outBy: z(), depBy: {}, prod: {}, moves: [], sec: {}, commonDep: 0 };
+    Object.keys(SECTIONS).forEach(k => { r.sec[k] = { ca: 0, cogs: 0, dep: 0, loss: 0, qty: 0 }; });
+    const secOfId = id => secOf(product(id));
     state.moves.forEach(m => {
       if (m.date < from || m.date > to) return;
       r.moves.push(m);
@@ -232,21 +286,31 @@
         if (m.payMode === 'credit') r.creditSales += m.total; else r.inBy[m.payMode] += m.total;
         m.lines.forEach(l => {
           const c = l.qty * l.cost; r.cogs += c;
+          const sx = r.sec[secOfId(l.productId)]; sx.ca += l.qty * l.price; sx.cogs += c; sx.qty += l.qty;
           const p = r.prod[l.productId] || (r.prod[l.productId] = { qty: 0, ca: 0, profit: 0 });
           p.qty += l.qty; p.ca += l.qty * l.price; p.profit += l.qty * l.price - c;
         });
       } else if (m.type === 'reglement') r.collectBy[m.payMode] += m.amount;
       else if (m.type === 'credit') r.manualCredits += m.amount;
-      else if (m.type === 'depense') { r.dep += m.amount; r.outBy[m.payMode] += m.amount; r.depBy[m.category] = (r.depBy[m.category] || 0) + m.amount; }
+      else if (m.type === 'depense') {
+        r.dep += m.amount; r.outBy[m.payMode] += m.amount; r.depBy[m.category] = (r.depBy[m.category] || 0) + m.amount;
+        const k = expSection(m); if (k === 'general' || !r.sec[k]) r.commonDep += m.amount; else r.sec[k].dep += m.amount;
+      }
       else if (m.type === 'achat') { const v = m.qty * m.unitCost; r.achats += v; r.outBy[m.payMode] += v; }
-      else if (m.type === 'perte') r.pertes += m.qty * m.cost;
-      else if (m.type === 'inventaire' && !m.initial) r.ecart += -((m.reserveDelta || 0) + (m.fridgeDelta || 0)) * (m.cost || 0);
+      else if (m.type === 'perte') { const v = m.qty * m.cost; r.pertes += v; r.sec[secOfId(m.productId)].loss += v; }
+      else if (m.type === 'inventaire' && !m.initial) {
+        const delta = -((m.reserveDelta || 0) + (m.fridgeDelta || 0)), p = product(m.productId);
+        // Tickets Wi-Fi manquants : ils valent leur prix de vente (argent non encaissé).
+        const v = delta * (isTicket(p) ? (m.price || p.sell) : (m.cost || 0));
+        r.ecart += v; r.sec[secOfId(m.productId)].loss += v;
+      }
     });
     const st = state.settings, days = daysBetween(from, to);
     r.days = days;
     r.amort = hasSolar() && st.solarCost > 0 && st.solarMonths > 0 ? st.solarCost / st.solarMonths * days / 30.4375 : 0;
     r.saved = hasSolar() && st.solarSaved > 0 ? st.solarSaved * days / 30.4375 : 0;
     r.brut = r.ca - r.cogs;
+    Object.keys(r.sec).forEach(k => { const x = r.sec[k]; x.profit = x.ca - x.cogs - x.dep - x.loss; });
     r.net = r.brut - r.dep - r.pertes - r.ecart - r.amort;
     r.collected = ['cash', 'om', 'moov'].reduce((t, k) => t + r.inBy[k] + r.collectBy[k], 0);
     r.moves.sort((a, b) => (b.date + (b.time || '') + b.createdAt).localeCompare(a.date + (a.time || '') + a.createdAt));
@@ -258,7 +322,7 @@
     switch (m.type) {
       case 'vente': return { t: 'Vente' + (m.payMode === 'credit' ? ' à crédit · ' + cname(m.clientId) : ''), d: m.lines.map(l => l.qty + ' ' + pname(l.productId)).join(', '), a: m.total, pay: m.payMode };
       case 'achat': return { t: 'Approvisionnement', d: pname(m.productId) + ' · ' + fmtQty(m.qty, p) + (m.note ? ' · ' + m.note : ''), a: -m.qty * m.unitCost, pay: m.payMode };
-      case 'production': return { t: 'Production', d: pname(m.productId) + ' · ' + fmtQty(m.qty, p) };
+      case 'production': return { t: isTicket(p) ? 'Tickets Wi-Fi imprimés' : 'Production', d: pname(m.productId) + ' · ' + fmtQty(m.qty, p) };
       case 'frigo': return { t: 'Chargement frigo', d: pname(m.productId) + ' · ' + fmtQty(m.qty, p) };
       case 'perte': return { t: m.reason || 'Casse / perte', d: pname(m.productId) + ' · ' + qtyU(m.qty, p) + (m.note ? ' · ' + m.note : ''), a: m.cost ? -m.qty * m.cost : null };
       case 'inventaire': {
@@ -267,7 +331,7 @@
         if (m.fridgeDelta) parts.push('frigo ' + (m.fridgeDelta > 0 ? '+' : '') + m.fridgeDelta);
         return { t: m.initial ? 'Stock de départ' : 'Inventaire', d: pname(m.productId) + ' · ' + parts.join(', ') };
       }
-      case 'depense': return { t: 'Dépense', d: m.category + (m.label ? ' · ' + m.label : ''), a: -m.amount, pay: m.payMode };
+      case 'depense': return { t: 'Dépense · ' + secLabel(expSection(m)), d: m.category + (m.label ? ' · ' + m.label : ''), a: -m.amount, pay: m.payMode };
       case 'credit': return { t: 'Crédit (hors caisse) · ' + cname(m.clientId), d: money(m.amount) + (m.label ? ' · ' + m.label : '') };
       case 'reglement': return { t: 'Paiement de crédit · ' + cname(m.clientId), d: m.note || '', a: m.amount, pay: m.payMode };
     }
@@ -296,12 +360,21 @@
     $('#todaySales').textContent = money(r.ca);
     $('#todayProfit').textContent = money(r.brut);
     $('#todayMobile').textContent = money(r.inBy.om + r.inBy.moov + r.collectBy.om + r.collectBy.moov);
-    $('#productGrid').innerHTML = state.products.map(p => {
+    const secs = activeSections();
+    if (sellSection !== 'all' && secs.indexOf(sellSection) === -1) sellSection = 'all';
+    $('#sectionChips').innerHTML = secs.length > 1 ? ['all'].concat(secs).map(k => '<button class="chip' + (k === sellSection ? ' active' : '') + '" data-section="' + k + '">' +
+      (k === 'all' ? 'Tout' : SECTIONS[k].icon + ' ' + SECTIONS[k].label) + '</button>').join('') : '';
+    const stockText = (p, fr) => {
+      if (isService(p)) return SECTIONS[secOf(p)].icon;
+      if (fr <= 0) return isTicket(p) ? 'Plus de tickets' : isMade(p) ? 'Plus en stock' : 'Frigo vide';
+      return (isTicket(p) ? '🎫 ' : isMade(p) ? '🧊 ' : '❄ ') + fr;
+    };
+    $('#productGrid').innerHTML = state.products.filter(p => sellSection === 'all' || secOf(p) === sellSection).map(p => {
       const s = st[p.id], q = cart[p.id] || 0, fr = s.fridge;
-      return '<button class="pbtn' + (q ? ' in-cart' : '') + (p.sell ? '' : ' noprice') + '" data-add="' + p.id + '">' +
+      return '<button class="pbtn sec-' + secOf(p) + (q ? ' in-cart' : '') + (p.sell ? '' : ' noprice') + '" data-add="' + p.id + '">' +
         (q ? '<span class="qty">' + q + '</span>' : '') + '<b>' + esc(p.name) + '</b>' +
         '<span class="price">' + (p.sell ? money(p.sell) : 'Prix ?') + '</span>' +
-        '<small class="' + (fr <= 0 ? 'low' : '') + '">' + (fr <= 0 ? (isMade(p) ? 'Plus en stock' : 'Frigo vide') : (isMade(p) ? '🧊 ' : '❄ ') + fr) + '</small></button>';
+        '<small class="' + (!isService(p) && fr <= 0 ? 'low' : '') + '">' + stockText(p, fr) + '</small></button>';
     }).join('') || '<p class="empty">Aucun produit. Ajoutez-en dans l\'onglet Stock.</p>';
     const sales = r.moves.filter(m => m.type === 'vente');
     $('#todayList').innerHTML = sales.length ? sales.map(m => moveRow(m)).join('') : '<li class="empty">Aucune vente aujourd\'hui.</li>';
@@ -327,21 +400,31 @@
 
   function renderStock(st) {
     let value = 0, margin = 0;
-    $('#stockList').innerHTML = state.products.map(p => {
+    const row = p => {
       const s = st[p.id], tot = s.reserve + s.fridge;
-      value += Math.max(0, tot) * p.buy; margin += Math.max(0, tot) * (p.sell - p.buy);
-      const missing = !p.sell || (!isMade(p) && !p.buy);
-      const locs = isMade(p)
-        ? '<span class="loc fridge">Fabriqué sur place · en stock : ' + fmtQty(s.fridge, p) + '</span>'
+      if (!isService(p) && !isTicket(p)) { value += Math.max(0, tot) * p.buy; margin += Math.max(0, tot) * (p.sell - p.buy); }
+      const missing = !p.sell || (!isMade(p) && !isService(p) && !p.buy);
+      const locs = isService(p) ? '<span class="loc">Préparé à la demande · pas de stock</span>'
+        : isTicket(p) ? '<span class="loc fridge">Tickets restants : ' + qtyU(s.fridge, p) + '</span>'
+        : isMade(p) ? '<span class="loc fridge">Fabriqué sur place · en stock : ' + fmtQty(s.fridge, p) + '</span>'
         : '<span class="loc">Réserve : ' + fmtQty(s.reserve, p) + '</span><span class="loc fridge">Frigo : ' + qtyU(s.fridge, p) + '</span>';
       return '<li class="item clickable" data-product="' + p.id + '"><div class="item-main"><b>' + esc(p.name) +
         (isLow(p, s) ? '<span class="badge">Stock bas</span>' : '') + (missing ? '<span class="badge warn">Prix à remplir</span>' : '') + '</b>' +
         '<div class="locs">' + locs + '</div></div>' +
-        '<div class="amount">' + fmtQty(tot, p) + '</div></li>';
-    }).join('') || '<li class="empty">Aucun produit.</li>';
+        (isService(p) ? '<div class="amount">' + (p.sell ? money(p.sell) : '') + '</div>' : '<div class="amount">' + fmtQty(tot, p) + '</div>') + '</li>';
+    };
+    const tools = {
+      wifi: '<div class="row sec-tools"><button class="btn ice" data-action="print-tickets">🖨️ Tickets imprimés</button><button class="btn" data-action="inventory" data-section="wifi">Compter les tickets</button></div>' +
+        '<p class="hint">Chaque fois que vous imprimez des tickets sur le MikroTik, notez-les ici. En comptant les tickets restants, l\'application repère les tickets sortis sans être payés.</p>',
+      cuisine: '<p class="hint">Les omelettes, le Nescafé et le Lipton se préparent à la demande : pas de stock. Notez les ingrédients (œufs, pain, sucre, gaz…) dans Dépenses → Cuisine pour connaître le vrai bénéfice de la cuisine.</p>',
+      services: '<p class="hint">Recharge des téléphones : vendue à la demande, sans stock.</p>'
+    };
+    $('#stockList').innerHTML = activeSections().map(k =>
+      '<li class="sec-head"><h2>' + SECTIONS[k].icon + ' ' + SECTIONS[k].label + '</h2>' + (tools[k] || '') + '</li>' +
+      state.products.filter(p => secOf(p) === k).map(row).join('')).join('') || '<li class="empty">Aucun produit.</li>';
     $('#stockValue').textContent = money(value);
     $('#stockMargin').textContent = money(margin);
-    $('#produceBtn').hidden = !state.products.some(isMade);
+    $('#produceBtn').hidden = !state.products.some(p => isMade(p) && !isTicket(p));
   }
 
   function clientRow(c, s) {
@@ -380,7 +463,8 @@
   function renderExpenses() {
     if (!$('#expDate').value) $('#expDate').value = today();
     const sel = $('#expCategory'), cur = sel.value;
-    sel.innerHTML = expenseCategories().map(c => '<option' + (c === cur ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+    sel.innerHTML = expenseGroups().map(g => '<optgroup label="' + esc(secLabel(g.section)) + '">' +
+      g.cats.map(c => '<option value="' + esc(c) + '" data-section="' + g.section + '"' + (c === cur ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</optgroup>').join('');
     $('#energyHint').textContent = state.settings.energy === 'solaire'
       ? 'Énergie : solaire. Pas de facture d\'électricité ; notez l\'entretien des panneaux et le remplacement des batteries quand il y en a.'
       : 'Énergie : ' + ENERGY[state.settings.energy] + '. Vous pouvez changer cela dans les réglages (⚙️).';
@@ -414,6 +498,13 @@
         (r.saved ? '<p class="info">☀️ Facture SONABEL évitée grâce au solaire sur la période : environ ' + money(r.saved) + '.</p>' : '') +
         (r.creditSales ? '<p class="info">Dont ' + money(r.creditSales) + ' vendus à crédit (suivi dans l\'onglet Crédits).</p>' : '') +
       '</div>' +
+      '<div class="pl"><h3>Bénéfice par activité</h3>' +
+        '<div class="table-wrap"><table><thead><tr><th>Activité</th><th>Ventes</th><th>Coûts</th><th>Bénéfice</th></tr></thead><tbody>' +
+        activeSections().map(k => { const x = r.sec[k];
+          return '<tr><td>' + secLabel(k) + '</td><td>' + money(x.ca) + '</td><td>' + money(x.cogs + x.dep + x.loss) + '</td><td class="' + (x.profit < 0 ? 'neg' : 'pos') + '">' + money(x.profit) + '</td></tr>'; }).join('') +
+        '<tr><td>Charges communes' + (r.amort ? ' + part solaire' : '') + '</td><td></td><td>' + money(r.commonDep + r.amort) + '</td><td class="neg">' + money(-(r.commonDep + r.amort)) + '</td></tr>' +
+        '</tbody></table></div>' +
+        '<p class="info">Coûts = prix d\'achat des produits vendus + dépenses de l\'activité + pertes et manquants. Charges communes = énergie, loyer, salaires, taxes…</p></div>' +
       '<div class="pl"><h3>Argent encaissé</h3>' +
         ['cash', 'om', 'moov'].map(k => row(PAY[k], r.inBy[k] + r.collectBy[k])).join('') +
         '<div class="pl-row total"><span>Total encaissé</span><span>' + money(r.collected) + '</span></div>' +
@@ -445,6 +536,7 @@
       (r.pertes ? 'Casse / pertes : ' + money(r.pertes) + '\n' : '') + (r.ecart ? 'Écart inventaire : ' + money(-r.ecart) + '\n' : '') +
       (r.amort ? 'Part installation solaire : ' + money(r.amort) + '\n' : '') +
       '*Bénéfice net : ' + money(r.net) + '*\n\n' +
+      activeSections().filter(k => r.sec[k].ca || r.sec[k].dep).map(k => secLabel(k) + ' : ventes ' + money(r.sec[k].ca) + ' · bénéfice ' + money(r.sec[k].profit)).join('\n') + '\n\n' +
       'Encaissé — Espèces : ' + money(r.inBy.cash + r.collectBy.cash) + ' · Orange Money : ' + money(r.inBy.om + r.collectBy.om) + ' · Moov Money : ' + money(r.inBy.moov + r.collectBy.moov) +
       (r.creditSales ? '\nVendu à crédit : ' + money(r.creditSales) : '') + (prod ? '\n\nProduits vendus :\n' + prod : '');
   }
@@ -530,54 +622,66 @@
   // ---------- Formulaires : produits & stock ----------
   function productForm(p) {
     const isNew = !p;
-    p = p || { name: '', cat: 'biere', source: 'achat', unit: 'bouteille', perCrate: 12, buy: 0, sell: 0, alert: 12 };
+    p = p || { name: '', cat: 'biere', section: sellSection !== 'all' ? sellSection : 'bar', source: 'achat', unit: 'bouteille', perCrate: 12, buy: 0, sell: 0, alert: 12 };
     openModal('<h2>' + (isNew ? 'Nouveau produit' : 'Modifier ' + esc(p.name)) + '</h2><form class="form" id="productForm">' +
       '<input type="hidden" name="id" value="' + esc(p.id || '') + '">' +
       '<label>Nom<input name="name" required value="' + esc(p.name) + '" placeholder="Ex : Brakina 65 cl"></label>' +
+      '<div class="row"><label>Activité<select name="section">' +
+        Object.keys(SECTIONS).map(k => '<option value="' + k + '"' + (secOf(p) === k ? ' selected' : '') + '>' + SECTIONS[k].icon + ' ' + SECTIONS[k].label + '</option>').join('') +
+      '</select></label><label>Unité de vente<input name="unit" value="' + esc(unitOf(p)) + '" placeholder="bouteille, sachet, ticket…"></label></div>' +
       '<label>Provenance<select name="source" id="pfSource">' +
-        '<option value="achat"' + (isMade(p) ? '' : ' selected') + '>Acheté (casiers, cartons)</option>' +
-        '<option value="fabrication"' + (isMade(p) ? ' selected' : '') + '>Fabriqué sur place (glace, jus, eau…)</option></select></label>' +
-      '<div class="row"><label>Catégorie<select name="cat">' +
-        [['biere', 'Bière'], ['sucrerie', 'Sucrerie'], ['eau', 'Eau'], ['glace', 'Glace'], ['autre', 'Autre']].map(([v, l]) => '<option value="' + v + '"' + (p.cat === v ? ' selected' : '') + '>' + l + '</option>').join('') +
-      '</select></label><label>Unité de vente<input name="unit" value="' + esc(unitOf(p)) + '" placeholder="bouteille, sachet…"></label></div>' +
-      '<p class="hint">L\'unité, c\'est ce que vous vendez un par un au client : la bouteille pour les boissons, le sachet pour la glace.</p>' +
+        '<option value="achat"' + (p.source === 'achat' ? ' selected' : '') + '>Acheté (casiers, cartons) : stock réserve + frigo</option>' +
+        '<option value="fabrication"' + (isMade(p) ? ' selected' : '') + '>Fabriqué ou imprimé sur place (glace, tickets Wi-Fi…) : stock</option>' +
+        '<option value="service"' + (isService(p) ? ' selected' : '') + '>Préparé à la demande (omelette, café, recharge…) : sans stock</option></select></label>' +
+      '<p class="hint">L\'unité, c\'est ce que vous vendez un par un au client : la bouteille, le sachet de glace, le ticket Wi-Fi, la tasse…</p>' +
       '<div class="only-achat row"><label>Unités par casier<input name="perCrate" inputmode="numeric" value="' + p.perCrate + '"></label>' +
         '<label>Prix d\'achat du casier (F)<input name="crateCost" inputmode="numeric" value="' + (p.buy ? Math.round(p.buy * p.perCrate) : '') + '" placeholder="Ex : 7200"></label></div>' +
       '<p class="hint only-achat">Unités par casier = nombre de bouteilles dans un casier. Comptez-les dans un de vos casiers : le bénéfice en dépend.</p>' +
-      '<p class="hint only-made">Les frais de fabrication (eau, sachets…) se notent dans Dépenses : ils sont déduits du bénéfice.</p>' +
+      '<p class="hint only-made only-service">Les frais (eau, sachets, ingrédients, abonnement internet…) se notent dans Dépenses, dans la bonne activité : ils sont déduits de son bénéfice.</p>' +
       '<div class="row"><label>Prix de vente unitaire (F)<input name="sell" inputmode="numeric" value="' + (p.sell || '') + '" placeholder="Ex : 700"></label>' +
-        '<label>Alerte stock bas (en unités)<input name="alert" inputmode="numeric" value="' + p.alert + '"></label></div>' +
-      (isNew ? '<p class="hint">Stock que vous avez déjà :</p><div class="row"><label class="only-achat">Réserve (unités)<input name="initReserve" inputmode="numeric" placeholder="0"></label><label>Frigo (unités)<input name="initFridge" inputmode="numeric" placeholder="0"></label></div>' : '') +
+        '<label class="only-stock">Alerte stock bas (en unités)<input name="alert" inputmode="numeric" value="' + p.alert + '"></label></div>' +
+      (isNew ? '<div class="only-stock"><p class="hint">Stock que vous avez déjà :</p><div class="row"><label class="only-achat">Réserve (unités)<input name="initReserve" inputmode="numeric" placeholder="0"></label><label>Frigo / en stock (unités)<input name="initFridge" inputmode="numeric" placeholder="0"></label></div></div>' : '') +
       '<p class="calc" id="pfCalc"></p>' +
       '<button class="btn primary block" type="submit">Enregistrer</button>' +
       (isNew ? '' : '<button class="btn danger block" type="button" data-action="delete-product" data-id="' + p.id + '">Supprimer ce produit</button>') + '</form>');
     const src = $('#pfSource');
-    const t = () => { const made = src.value === 'fabrication'; $$('.only-achat').forEach(e => { e.hidden = made; }); $$('.only-made').forEach(e => { e.hidden = !made; }); };
+    const t = () => {
+      const v = src.value;
+      $$('#productForm .only-achat').forEach(e => { e.hidden = v !== 'achat'; });
+      $$('#productForm .only-stock').forEach(e => { e.hidden = v === 'service'; });
+      $$('#productForm .only-made').forEach(e => { e.hidden = v === 'achat'; });
+    };
     const calc = () => {
-      const f = $('#productForm'), made = src.value === 'fabrication', sell = num(f.sell.value);
+      const f = $('#productForm'), made = src.value !== 'achat', sell = num(f.sell.value);
       const per = Math.max(1, num(f.perCrate.value)), cost = made ? 0 : num(f.crateCost.value) / per;
       const u = (f.unit.value || '').trim() || 'bouteille';
       $('#pfCalc').innerHTML = made ? (sell ? 'Prix de vente : <b>' + money(sell) + '</b> le ' + esc(u) + '.' : '')
         : (cost || sell ? 'Achat : <b>' + money(cost) + '</b> par ' + esc(u) + ' · vente : <b>' + money(sell) + '</b> · bénéfice : <b class="' + (sell - cost < 0 ? 'neg' : 'pos') + '">' + money(sell - cost) + '</b> par ' + esc(u) + '.' : '');
     };
     $('#productForm').addEventListener('input', calc);
-    src.addEventListener('change', () => { calc(); t(); const u = $('[name=unit]'); if (src.value === 'fabrication' && u.value === 'bouteille') u.value = 'sachet'; if (src.value === 'achat' && u.value === 'sachet') u.value = 'bouteille'; });
+    src.addEventListener('change', () => { calc(); t(); const u = $('[name=unit]'); if (src.value === 'fabrication' && u.value === 'bouteille') u.value = 'sachet'; if (src.value === 'achat' && u.value === 'sachet') u.value = 'bouteille'; if (src.value === 'service' && u.value === 'bouteille') u.value = 'portion'; });
     t(); calc();
   }
 
   function productDetail(id) {
     const p = product(id); if (!p) return;
     const s = computeStocks()[id], made = isMade(p);
+    if (isService(p)) {
+      openModal('<h2>' + esc(p.name) + '</h2><p class="hint">' + secLabel(secOf(p)) + ' · préparé à la demande, sans stock.</p>' +
+        '<div class="stats"><div class="stat"><span>Prix de vente</span><strong>' + money(p.sell) + '</strong></div><div class="stat"><span>Unité</span><strong>' + esc(unitOf(p)) + '</strong></div></div>' +
+        '<button class="btn primary block" data-action="edit-product" data-id="' + id + '">Modifier / prix</button>');
+      return;
+    }
     const moves = state.moves.filter(m => m.productId === id || (m.type === 'vente' && m.lines.some(l => l.productId === id)))
       .sort((a, b) => (b.date + b.time + b.createdAt).localeCompare(a.date + a.time + a.createdAt)).slice(0, 15);
     openModal('<h2>' + esc(p.name) + '</h2>' +
       '<div class="stats">' + (made
-        ? '<div class="stat"><span>En stock</span><strong>' + fmtQty(s.fridge, p) + '</strong></div><div class="stat"><span>Prix de vente</span><strong>' + money(p.sell) + '</strong></div>'
+        ? '<div class="stat"><span>' + (isTicket(p) ? 'Tickets restants' : 'En stock') + '</span><strong>' + fmtQty(s.fridge, p) + '</strong></div><div class="stat"><span>Prix de vente</span><strong>' + money(p.sell) + '</strong></div>'
         : '<div class="stat"><span>Réserve</span><strong>' + fmtQty(s.reserve, p) + '</strong></div><div class="stat"><span>Frigo</span><strong>' + qtyU(s.fridge, p) + '</strong></div>' +
           '<div class="stat"><span>Achat / unité</span><strong>' + money(p.buy) + '</strong></div><div class="stat"><span>Vente / unité</span><strong>' + money(p.sell) + '</strong></div>') + '</div>' +
-      '<p class="hint">' + (made ? 'Fabriqué sur place.' : 'Bénéfice par unité : <b class="' + (p.sell - p.buy < 0 ? 'neg' : 'pos') + '">' + money(p.sell - p.buy) + '</b> · casier de ' + p.perCrate) + '</p>' +
+      '<p class="hint">' + (isTicket(p) ? 'Tickets imprimés depuis le MikroTik.' : made ? 'Fabriqué sur place.' : 'Bénéfice par unité : <b class="' + (p.sell - p.buy < 0 ? 'neg' : 'pos') + '">' + money(p.sell - p.buy) + '</b> · casier de ' + p.perCrate) + '</p>' +
       '<div class="row">' + (made
-        ? '<button class="btn ice" data-action="produce" data-id="' + id + '">🧊 Production</button>'
+        ? (isTicket(p) ? '<button class="btn ice" data-action="print-tickets">🖨️ Tickets imprimés</button>' : '<button class="btn ice" data-action="produce" data-id="' + id + '">🧊 Production</button>')
         : '<button class="btn primary" data-action="restock" data-id="' + id + '">+ Approvisionner</button><button class="btn cold" data-action="load-fridge" data-id="' + id + '">❄ Charger frigo</button>') +
       '<button class="btn" data-action="loss" data-id="' + id + '">Perte / usage</button>' +
       '<button class="btn" data-action="edit-product" data-id="' + id + '">Modifier / prix</button></div>' +
@@ -585,11 +689,12 @@
   }
 
   function restockForm(id) {
-    const bought = state.products.filter(x => !isMade(x));
-    const p = (product(id) && !isMade(product(id))) ? product(id) : bought[0];
+    const isBought = x => x.source === 'achat';
+    const bought = state.products.filter(isBought);
+    const p = (product(id) && isBought(product(id))) ? product(id) : bought[0];
     if (!p) { toast('Ajoutez d\'abord un produit acheté'); return; }
     openModal('<h2>Approvisionnement (achat)</h2><form class="form" id="restockForm">' +
-      '<label>Produit<select name="productId" id="restockProduct">' + productOptions(p.id, x => !isMade(x)) + '</select></label>' +
+      '<label>Produit<select name="productId" id="restockProduct">' + productOptions(p.id, isBought) + '</select></label>' +
       '<div id="restockQty">' + qtyFields('q', p) + '</div>' +
       '<div class="row"><label>Prix d\'achat du casier (F)<input name="crateCost" id="restockCost" inputmode="numeric" value="' + (p.buy ? Math.round(p.buy * p.perCrate) : '') + '" required></label>' +
       '<label>Prix de vente unitaire (F)<input name="sell" id="restockSell" inputmode="numeric" value="' + (p.sell || '') + '"></label></div>' +
@@ -613,19 +718,31 @@
   }
 
   function produceForm(id) {
-    const made = state.products.filter(isMade);
+    const isProd = x => isMade(x) && !isTicket(x);
+    const made = state.products.filter(isProd);
     if (!made.length) { toast('Ajoutez d\'abord un produit fabriqué (ex. glace)'); return; }
-    const p = isMade(product(id)) ? product(id) : made[0];
+    const p = isProd(product(id)) ? product(id) : made[0];
     openModal('<h2>🧊 Production</h2><p class="hint">Ce que vous venez de fabriquer (sachets de glace, etc.). Les frais (eau, sachets) se notent dans Dépenses.</p>' +
-      '<form class="form" id="produceForm"><label>Produit<select name="productId">' + productOptions(p.id, isMade) + '</select></label>' +
+      '<form class="form" id="produceForm"><label>Produit<select name="productId">' + productOptions(p.id, isProd) + '</select></label>' +
       '<div class="row"><label>Quantité fabriquée<input name="qty" inputmode="numeric" required placeholder="Ex : 40"></label>' +
       '<label>Date<input type="date" name="date" value="' + today() + '" required></label></div>' +
       '<button class="btn ice block" type="submit">Enregistrer la production</button></form>');
   }
 
+  function ticketsForm() {
+    const list = state.products.filter(isTicket), st = computeStocks();
+    if (!list.length) { toast('Ajoutez d\'abord un forfait Wi-Fi'); return; }
+    openModal('<h2>🖨️ Tickets Wi-Fi imprimés</h2><p class="hint">Combien de tickets venez-vous d\'imprimer depuis le MikroTik, pour chaque forfait ?</p>' +
+      '<form class="form" id="ticketsForm"><div class="load-head two"><span>Forfait</span><span>Tickets</span></div>' +
+      list.map(p => '<div class="load-row two"><div><b>' + esc(p.name) + '</b><small>' + money(p.sell) + ' · reste ' + qtyU(st[p.id].fridge, p) + '</small></div>' +
+        '<input name="t_' + p.id + '" inputmode="numeric" placeholder="0" aria-label="Tickets ' + esc(p.name) + '"></div>').join('') +
+      '<label>Date<input type="date" name="date" value="' + today() + '" required></label>' +
+      '<button class="btn ice block" type="submit">Enregistrer les tickets</button></form>');
+  }
+
   function fridgeForm(onlyId) {
     const st = computeStocks();
-    const list = onlyId ? [product(onlyId)] : state.products.filter(p => !isMade(p));
+    const list = onlyId ? [product(onlyId)] : state.products.filter(p => p.source === 'achat');
     openModal('<h2>❄ Charger le frigo</h2><p class="hint">Indiquez ce que vous sortez de la réserve pour mettre au frigo.</p>' +
       '<form class="form" id="fridgeForm"><div class="load-head"><span>Produit</span><span>Casiers</span><span>Unités</span></div>' +
       list.map(p => '<div class="load-row"><div><b>' + esc(p.name) + '</b><small>Réserve ' + fmtQty(st[p.id].reserve, p) + ' · frigo ' + st[p.id].fridge + '</small></div>' +
@@ -634,11 +751,14 @@
       '<button class="btn cold block" type="submit">Enregistrer le chargement</button></form>');
   }
 
-  function inventoryForm() {
-    const st = computeStocks();
-    openModal('<h2>Inventaire (comptage réel)</h2><p class="hint">Comptez et corrigez si besoin. Les différences apparaissent dans le bilan (manquants ou surplus).</p>' +
-      '<form class="form" id="inventoryForm"><div class="load-head"><span>Produit</span><span>Réserve</span><span>Frigo</span></div>' +
-      state.products.map(p => '<div class="load-row"><div><b>' + esc(p.name) + '</b><small>en ' + units(2, p) + '</small></div>' +
+  function inventoryForm(section) {
+    const st = computeStocks(), wifi = section === 'wifi';
+    const list = state.products.filter(p => !isService(p) && (section ? secOf(p) === section : !isTicket(p)));
+    openModal('<h2>' + (wifi ? 'Compter les tickets Wi-Fi' : 'Inventaire (comptage réel)') + '</h2><p class="hint">' +
+      (wifi ? 'Comptez les tickets qui restent pour chaque forfait. Un ticket qui manque sans avoir été vendu est compté à son prix dans le bilan.'
+        : 'Comptez et corrigez si besoin. Les différences apparaissent dans le bilan (manquants ou surplus).') + '</p>' +
+      '<form class="form" id="inventoryForm"><div class="load-head"><span>Produit</span><span>Réserve</span><span>' + (wifi ? 'Restants' : 'Frigo') + '</span></div>' +
+      list.map(p => '<div class="load-row"><div><b>' + esc(p.name) + '</b><small>en ' + units(2, p) + '</small></div>' +
         (isMade(p) ? '<span class="muted" style="text-align:center">—</span>' : '<input name="r_' + p.id + '" inputmode="numeric" value="' + st[p.id].reserve + '" aria-label="Réserve ' + esc(p.name) + '">') +
         '<input name="f_' + p.id + '" inputmode="numeric" value="' + st[p.id].fridge + '" aria-label="Frigo ' + esc(p.name) + '"></div>').join('') +
       '<button class="btn primary block" type="submit">Valider l\'inventaire</button></form>');
@@ -646,10 +766,10 @@
 
   function lossForm(id) {
     openModal('<h2>Perte / usage interne</h2><form class="form" id="lossForm">' +
-      '<label>Produit<select name="productId">' + productOptions(id) + '</select></label>' +
+      '<label>Produit<select name="productId">' + productOptions(id, x => !isService(x)) + '</select></label>' +
       '<div class="row"><label>Quantité<input name="qty" inputmode="numeric" required placeholder="1"></label>' +
-      '<label>Où ?<select name="loc"><option value="fridge">Frigo / congélateur</option><option value="reserve">Réserve</option></select></label></div>' +
-      '<label>Raison<select name="reason"><option>Casse</option><option>Périmé / abîmé</option><option>Offert</option><option>Usage à la buvette</option><option>Fondu (glace)</option><option>Autre perte</option></select></label>' +
+      '<label>Où ?<select name="loc"><option value="fridge">Frigo / en stock</option><option value="reserve">Réserve</option></select></label></div>' +
+      '<label>Raison<select name="reason"><option>Casse</option><option>Périmé / abîmé</option><option>Offert</option><option>Usage à la buvette</option><option>Fondu (glace)</option><option>Ticket Wi-Fi offert / abîmé</option><option>Autre perte</option></select></label>' +
       '<label>Note<input name="note" placeholder="Facultatif"></label>' +
       '<button class="btn danger block" type="submit">Enregistrer</button></form>');
   }
@@ -723,6 +843,7 @@
     const st = computeStocks(), short = [];
     const lines = ids.map(id => {
       const p = product(id), q = cart[id], s = st[id];
+      if (isService(p)) return { productId: id, qty: q, price: p.sell, cost: 0, fromFridge: 0, fromReserve: 0 };
       const fromFridge = Math.min(q, Math.max(0, s.fridge)), fromReserve = isMade(p) ? 0 : q - fromFridge;
       const fridgeTake = isMade(p) ? q : fromFridge;
       if (q > Math.max(0, s.fridge) + (isMade(p) ? 0 : Math.max(0, s.reserve))) short.push(p.name + ' (reste ' + Math.max(0, s.fridge + (isMade(p) ? 0 : s.reserve)) + ')');
@@ -777,7 +898,12 @@
       '<label>Nom de votre commerce<input name="name" required placeholder="Ex : Buvette Le Baobab"></label>' +
       '<label>Votre numéro Orange Money / Moov Money<input name="phone" type="tel" inputmode="tel" placeholder="Ex : 70 12 34 56"></label>' +
       '<label>Votre source d\'énergie<select name="energy">' + Object.keys(ENERGY).map(k => '<option value="' + k + '">' + ENERGY[k] + '</option>').join('') + '</select></label>' +
-      '<label class="choice"><input type="checkbox" name="ice" checked> Je fabrique et vends de la glace</label>' +
+      '<p class="hint" style="margin-top:14px">Ce que vous vendez :</p>' +
+      '<label class="choice"><input type="checkbox" name="act_bar" checked> 🍺 Boissons (bar)</label>' +
+      '<label class="choice"><input type="checkbox" name="ice" checked> 🧊 Glace fabriquée sur place</label>' +
+      '<label class="choice"><input type="checkbox" name="act_cuisine" checked> 🍳 Cuisine (omelettes, Nescafé, Lipton…)</label>' +
+      '<label class="choice"><input type="checkbox" name="act_wifi" checked> 📶 Wi-Fi (tickets MikroTik)</label>' +
+      '<label class="choice"><input type="checkbox" name="act_services" checked> 🔌 Recharge de téléphones</label>' +
       '<button class="btn primary block" type="submit">Commencer</button></form>');
   }
 
@@ -793,6 +919,8 @@
     }
     const dec = e.target.closest('[data-dec]');
     if (dec) { const id = dec.dataset.dec; cart[id] = Math.max(0, (cart[id] || 0) - 1); if (!cart[id]) delete cart[id]; renderSell(computeStocks()); return; }
+    const secChip = e.target.closest('[data-section].chip');
+    if (secChip) { sellSection = secChip.dataset.section; renderSell(computeStocks()); return; }
     const pm = e.target.closest('[data-pay]');
     if (pm) { payMode = pm.dataset.pay; renderCart(); return; }
     const tab = e.target.closest('.tab');
@@ -818,7 +946,8 @@
       else if (a === 'restock') restockForm(id);
       else if (a === 'produce') produceForm(id);
       else if (a === 'load-fridge') fridgeForm(id);
-      else if (a === 'inventory') inventoryForm();
+      else if (a === 'inventory') inventoryForm(el.dataset.section);
+      else if (a === 'print-tickets') ticketsForm();
       else if (a === 'loss') lossForm(id);
       else if (a === 'new-client') clientForm();
       else if (a === 'edit-client') clientForm(client(id));
@@ -870,12 +999,12 @@
     const d = Object.fromEntries(new FormData(f).entries());
 
     if (formId === 'productForm') {
-      const made = d.source === 'fabrication';
+      const made = d.source !== 'achat';
       const perCrate = made ? 1 : Math.max(1, num(d.perCrate));
       let p = d.id ? product(d.id) : null; const isNew = !p;
       if (isNew) { p = { id: uid() }; state.products.push(p); }
-      Object.assign(p, { name: d.name.trim(), cat: d.cat, source: d.source, unit: (d.unit || '').trim() || (made ? 'sachet' : 'bouteille'),
-        perCrate, buy: made ? 0 : num(d.crateCost) / perCrate, sell: num(d.sell), alert: num(d.alert) });
+      Object.assign(p, { name: d.name.trim(), cat: p.cat || d.section, section: d.section, source: d.source, unit: (d.unit || '').trim() || (made ? 'sachet' : 'bouteille'),
+        perCrate, buy: made ? 0 : num(d.crateCost) / perCrate, sell: num(d.sell), alert: d.source === 'service' ? 0 : num(d.alert) });
       if (isNew && (num(d.initReserve) || num(d.initFridge))) addMove({ type: 'inventaire', initial: true, productId: p.id, reserveDelta: made ? 0 : num(d.initReserve), fridgeDelta: num(d.initFridge), cost: p.buy });
       save(); render(); productDetail(p.id); toast('Produit enregistré');
     } else if (formId === 'restockForm') {
@@ -890,6 +1019,14 @@
       if (!qty) { toast('Indiquez la quantité fabriquée'); return; }
       addMove({ type: 'production', productId: p.id, qty, date: d.date });
       save(); render(); closeModal(); toast(fmtQty(qty, p) + ' de ' + p.name + ' ajouté(s)');
+    } else if (formId === 'ticketsForm') {
+      let n = 0;
+      state.products.filter(isTicket).forEach(p => {
+        const qty = num(d['t_' + p.id]);
+        if (qty > 0) { addMove({ type: 'production', productId: p.id, qty, date: d.date }); n += qty; }
+      });
+      if (!n) { toast('Aucun ticket saisi'); return; }
+      save(); render(); closeModal(); toast(n + ' ticket(s) Wi-Fi ajouté(s) au stock');
     } else if (formId === 'fridgeForm') {
       let n = 0;
       state.products.forEach(p => {
@@ -902,8 +1039,9 @@
     } else if (formId === 'inventoryForm') {
       const st = computeStocks(); let changed = 0;
       state.products.forEach(p => {
+        if (!(('f_' + p.id) in d)) return;
         const rd = isMade(p) ? 0 : num(d['r_' + p.id]) - st[p.id].reserve, fd = num(d['f_' + p.id]) - st[p.id].fridge;
-        if (rd || fd) { addMove({ type: 'inventaire', productId: p.id, reserveDelta: rd, fridgeDelta: fd, cost: p.buy }); changed++; }
+        if (rd || fd) { addMove({ type: 'inventaire', productId: p.id, reserveDelta: rd, fridgeDelta: fd, cost: p.buy, price: p.sell }); changed++; }
       });
       save(); render(); closeModal(); toast(changed ? changed + ' produit(s) corrigé(s)' : 'Inventaire conforme, rien à corriger');
     } else if (formId === 'lossForm') {
@@ -914,7 +1052,8 @@
     } else if (formId === 'expenseForm') {
       const amount = num(d.amount);
       if (!amount) { toast('Montant invalide'); return; }
-      addMove({ type: 'depense', category: d.category, label: (d.label || '').trim(), amount, payMode: d.payMode, date: d.date });
+      const opt = $('#expCategory').selectedOptions[0];
+      addMove({ type: 'depense', category: d.category, section: (opt && opt.dataset.section) || catSection(d.category), label: (d.label || '').trim(), amount, payMode: d.payMode, date: d.date });
       $('#expAmount').value = ''; $('#expLabel').value = ''; $('#expDate').value = today();
       save(); render(); toast('Dépense enregistrée');
     } else if (formId === 'clientForm') {
@@ -950,6 +1089,7 @@
     } else if (formId === 'setupForm') {
       Object.assign(state.settings, { name: d.name.trim() || 'Ma Buvette', phone: (d.phone || '').trim(), energy: d.energy });
       if (!d.ice) state.products = state.products.filter(p => p.id !== 'glace');
+      Object.keys(SECTIONS).forEach(k => { if (!d['act_' + k]) state.products = state.products.filter(p => secOf(p) !== k || (k === 'bar' && p.id === 'glace' && d.ice)); });
       save(); render(); closeModal();
       toast('C\'est prêt ! Mettez maintenant vos prix dans l\'onglet Stock.');
     }

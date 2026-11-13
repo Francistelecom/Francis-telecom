@@ -31,7 +31,8 @@
         <div><span>Bénéfice du jour</span><strong id="todayProfit" class="pos">0 F</strong></div>
         <div><span>Orange / Moov</span><strong id="todayMobile">0 F</strong></div>
       </div>
-      <p class="hint">Touchez un produit pour l'ajouter. Le chiffre sous le nom est le stock du frigo.</p>
+      <div class="chips sections" id="sectionChips"></div>
+      <p class="hint">Touchez un produit pour l'ajouter. Sous le nom : ❄ stock du frigo, 🧊 glace, 🎫 tickets Wi-Fi restants.</p>
       <div class="grid" id="productGrid"></div>
       <h2>Ventes d'aujourd'hui</h2>
       <ul class="list" id="todayList"></ul>
@@ -47,7 +48,7 @@
         <button class="btn primary" data-action="restock">+ Approvisionnement</button>
         <button class="btn cold" data-action="load-fridge">❄ Charger le frigo</button>
         <button class="btn ice" data-action="produce" id="produceBtn">🧊 Production</button>
-        <button class="btn" data-action="inventory">Inventaire</button>
+        <button class="btn" data-action="inventory">Inventaire du bar</button>
       </div>
       <ul class="list" id="stockList"></ul>
       <button class="btn block" data-action="new-product">+ Ajouter un produit</button>
@@ -85,7 +86,7 @@
           <label>Type<select name="category" id="expCategory"></select></label>
           <label>Montant (F)<input name="amount" id="expAmount" required inputmode="numeric" placeholder="Ex : 1500"></label>
         </div>
-        <label>Détail<input name="label" id="expLabel" placeholder="Ex : 50 sachets pour la glace"></label>
+        <label>Détail<input name="label" id="expLabel" placeholder="Ex : 1 plaquette d'œufs, 50 sachets…"></label>
         <div class="row">
           <label>Payé par<select name="payMode" id="expPay">
             <option value="cash">Espèces</option><option value="om">Orange Money</option><option value="moov">Moov Money</option>

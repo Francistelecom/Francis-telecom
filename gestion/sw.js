@@ -1,5 +1,5 @@
 // Service worker : permet d'utiliser l'application sans connexion internet.
-var CACHE = 'caisse-credit-v1';
+var CACHE = 'caisse-credit-v2';
 var FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', function (e) {

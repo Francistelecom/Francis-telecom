@@ -17,6 +17,18 @@ caisse, stock, production de glace, crédits clients avec rappels WhatsApp/SMS, 
   (ventes + crédits remboursés) ; crédits accordés et remboursés ; caisse entrées − sorties ; produits les plus vendus ; envoi sur WhatsApp.
 - Journal de toutes les opérations (annulables), export Excel (CSV), sauvegarde / restauration, hors connexion, installable.
 
+## Activités séparées
+
+- 🍺 **Bar** : boissons (réserve + frigo) et glace fabriquée.
+- 🍳 **Cuisine** : omelettes, Nescafé, Lipton… préparés à la demande, sans stock ; ingrédients dans Dépenses → Cuisine.
+- 📶 **Wi-Fi** : forfaits 2 h (100 F), 12 h (200 F), 24 h (300 F), 1 semaine (1 000 F), 1 mois (3 000 F).
+  Les tickets imprimés depuis le MikroTik sont enregistrés comme un stock ; « Compter les tickets » repère les tickets
+  sortis sans être payés (comptés à leur prix de vente dans le bilan).
+- 🔌 **Services** : recharge de téléphones, sans stock.
+
+La caisse a un rayon par activité, les dépenses sont rangées par activité (ou en charges communes : énergie, loyer,
+salaires, taxes) et le bilan donne le **bénéfice de chaque activité** puis le bénéfice net.
+
 ## Récupération des anciennes données
 
 Sur le même site, les données de `buvette/` et `credit-boutique/` sont reprises automatiquement au premier lancement.

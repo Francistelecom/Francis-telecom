@@ -254,3 +254,14 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; }
 .pl .info { color: var(--muted); font-size: .88rem; margin: 8px 0 0; }
 .calc { background: var(--surface); border: 1px dashed var(--gold); border-radius: 10px; padding: 10px 12px; font-size: .92rem; margin-top: 12px; }
 .calc:empty { display: none; }
+
+/* --- Activités (bar, cuisine, Wi-Fi, services) --- */
+.chips.sections { margin: 12px 0 2px; }
+.sec-head { list-style: none; margin-top: 8px; }
+.sec-head h2 { margin: 14px 0 6px; }
+.sec-tools { margin-bottom: 6px; }
+.load-row.two, .load-head.two { grid-template-columns: 1fr 90px; }
+.pbtn.sec-cuisine .price { color: #b8580f; }
+.pbtn.sec-wifi .price { color: var(--cold); }
+.pbtn.sec-services .price { color: var(--good); }
+optgroup { font-style: normal; font-weight: 700; }
