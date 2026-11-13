@@ -252,3 +252,5 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; }
 .choice { display: flex; gap: 10px; align-items: center; font-weight: 600; margin-top: 12px; }
 .choice input { width: auto; margin: 0; }
 .pl .info { color: var(--muted); font-size: .88rem; margin: 8px 0 0; }
+.calc { background: var(--surface); border: 1px dashed var(--gold); border-radius: 10px; padding: 10px 12px; font-size: .92rem; margin-top: 12px; }
+.calc:empty { display: none; }

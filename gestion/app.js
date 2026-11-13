@@ -43,7 +43,7 @@
     return {
       settings: defaultSettings(),
       products: DEFAULT_PRODUCTS.map(([name, cat, perCrate], i) => ({
-        id: 'p' + i, name, cat, source: 'achat', unit: 'btl', perCrate, buy: 0, sell: 0, alert: perCrate
+        id: 'p' + i, name, cat, source: 'achat', unit: 'bouteille', perCrate, buy: 0, sell: 0, alert: perCrate
       })).concat([Object.assign({}, ICE_PRODUCT)]),
       clients: [],
       moves: []
@@ -56,7 +56,7 @@
       clients: Array.isArray(d.clients) ? d.clients : [],
       moves: Array.isArray(d.moves) ? d.moves : []
     };
-    st.products.forEach(p => { p.source = p.source || 'achat'; p.unit = p.unit || 'btl'; p.perCrate = p.perCrate || 1; });
+    st.products.forEach(p => { p.source = p.source || 'achat'; p.unit = (!p.unit || p.unit === 'btl') ? 'bouteille' : p.unit; p.perCrate = p.perCrate || 1; });
     return st;
   }
   function readJSON(key) {
@@ -70,7 +70,7 @@
     if (!buv && !cred) { fresh = true; return defaultState(); }
     const st = defaultState();
     if (buv) {
-      st.products = (buv.products || []).map(p => Object.assign({ source: 'achat', unit: 'btl' }, p));
+      st.products = (buv.products || []).map(p => Object.assign({ source: 'achat', unit: 'bouteille' }, p));
       st.moves = buv.moves || [];
       if (buv.settings && buv.settings.name) st.settings.name = buv.settings.name;
     }
@@ -119,15 +119,18 @@
   const client = id => state.clients.find(c => c.id === id);
   const cname = id => (client(id) || { name: '(client supprimé)' }).name;
   const isMade = p => p && p.source === 'fabrication';
-  const unitOf = p => (p && p.unit) || 'btl';
+  const unitOf = p => (p && p.unit) || 'bouteille';
+  // « 1 bouteille », « 3 bouteilles », « 2 sachets »
+  const units = (n, p) => { const u = unitOf(p); return Math.abs(n) > 1 && !/[sx]$/.test(u) ? u + 's' : u; };
+  const qtyU = (n, p) => n + ' ' + units(n, p);
   const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
   function fmtQty(n, p) {
     n = Math.round(n);
     const neg = n < 0, a = Math.abs(n), pc = p ? p.perCrate : 1, u = unitOf(p);
-    if (!pc || pc <= 1 || a < pc) return (neg ? '−' : '') + a + ' ' + u;
+    if (!pc || pc <= 1 || a < pc) return (neg ? '−' : '') + a + ' ' + units(a, p);
     const c = Math.floor(a / pc), b = a % pc;
-    return (neg ? '−' : '') + c + ' cs' + (b ? ' + ' + b + ' ' + u : '');
+    return (neg ? '−' : '') + c + (c > 1 ? ' casiers' : ' casier') + (b ? ' + ' + b + ' ' + units(b, p) : '');
   }
 
   // Téléphones burkinabè : "70 12 34 56" -> "22670123456"
@@ -257,7 +260,7 @@
       case 'achat': return { t: 'Approvisionnement', d: pname(m.productId) + ' · ' + fmtQty(m.qty, p) + (m.note ? ' · ' + m.note : ''), a: -m.qty * m.unitCost, pay: m.payMode };
       case 'production': return { t: 'Production', d: pname(m.productId) + ' · ' + fmtQty(m.qty, p) };
       case 'frigo': return { t: 'Chargement frigo', d: pname(m.productId) + ' · ' + fmtQty(m.qty, p) };
-      case 'perte': return { t: m.reason || 'Casse / perte', d: pname(m.productId) + ' · ' + m.qty + ' ' + unitOf(p) + (m.note ? ' · ' + m.note : ''), a: m.cost ? -m.qty * m.cost : null };
+      case 'perte': return { t: m.reason || 'Casse / perte', d: pname(m.productId) + ' · ' + qtyU(m.qty, p) + (m.note ? ' · ' + m.note : ''), a: m.cost ? -m.qty * m.cost : null };
       case 'inventaire': {
         const parts = [];
         if (m.reserveDelta) parts.push('réserve ' + (m.reserveDelta > 0 ? '+' : '') + m.reserveDelta);
@@ -330,7 +333,7 @@
       const missing = !p.sell || (!isMade(p) && !p.buy);
       const locs = isMade(p)
         ? '<span class="loc fridge">Fabriqué sur place · en stock : ' + fmtQty(s.fridge, p) + '</span>'
-        : '<span class="loc">Réserve : ' + fmtQty(s.reserve, p) + '</span><span class="loc fridge">Frigo : ' + s.fridge + ' ' + unitOf(p) + '</span>';
+        : '<span class="loc">Réserve : ' + fmtQty(s.reserve, p) + '</span><span class="loc fridge">Frigo : ' + qtyU(s.fridge, p) + '</span>';
       return '<li class="item clickable" data-product="' + p.id + '"><div class="item-main"><b>' + esc(p.name) +
         (isLow(p, s) ? '<span class="badge">Stock bas</span>' : '') + (missing ? '<span class="badge warn">Prix à remplir</span>' : '') + '</b>' +
         '<div class="locs">' + locs + '</div></div>' +
@@ -505,8 +508,8 @@
   }).join('');
   const qtyFields = (prefix, p) => (p.perCrate > 1
     ? '<div class="row"><label>Casiers (de ' + p.perCrate + ')<input name="' + prefix + 'Crates" inputmode="numeric" placeholder="0"></label>' +
-      '<label>' + unitOf(p) + ' en plus<input name="' + prefix + 'Bottles" inputmode="numeric" placeholder="0"></label></div>'
-    : '<label>Quantité (' + unitOf(p) + ')<input name="' + prefix + 'Bottles" inputmode="numeric" placeholder="0"></label>');
+      '<label>' + units(2, p).charAt(0).toUpperCase() + units(2, p).slice(1) + ' en plus<input name="' + prefix + 'Bottles" inputmode="numeric" placeholder="0"></label></div>'
+    : '<label>Quantité (' + units(2, p) + ')<input name="' + prefix + 'Bottles" inputmode="numeric" placeholder="0"></label>');
   const clientPicker = sel => '<label>Client<select name="clientId" id="clientPick" required>' +
     (state.clients.length ? '<option value="">— Choisir —</option>' + clientOptions(sel) : '') + '<option value="__new">+ Nouveau client…</option></select></label>' +
     '<div id="newClientFields" hidden><label>Nom du client<input name="newName" placeholder="Ex : Ouédraogo Issa"></label>' +
@@ -527,7 +530,7 @@
   // ---------- Formulaires : produits & stock ----------
   function productForm(p) {
     const isNew = !p;
-    p = p || { name: '', cat: 'biere', source: 'achat', unit: 'btl', perCrate: 12, buy: 0, sell: 0, alert: 12 };
+    p = p || { name: '', cat: 'biere', source: 'achat', unit: 'bouteille', perCrate: 12, buy: 0, sell: 0, alert: 12 };
     openModal('<h2>' + (isNew ? 'Nouveau produit' : 'Modifier ' + esc(p.name)) + '</h2><form class="form" id="productForm">' +
       '<input type="hidden" name="id" value="' + esc(p.id || '') + '">' +
       '<label>Nom<input name="name" required value="' + esc(p.name) + '" placeholder="Ex : Brakina 65 cl"></label>' +
@@ -536,19 +539,30 @@
         '<option value="fabrication"' + (isMade(p) ? ' selected' : '') + '>Fabriqué sur place (glace, jus, eau…)</option></select></label>' +
       '<div class="row"><label>Catégorie<select name="cat">' +
         [['biere', 'Bière'], ['sucrerie', 'Sucrerie'], ['eau', 'Eau'], ['glace', 'Glace'], ['autre', 'Autre']].map(([v, l]) => '<option value="' + v + '"' + (p.cat === v ? ' selected' : '') + '>' + l + '</option>').join('') +
-      '</select></label><label>Unité<input name="unit" value="' + esc(unitOf(p)) + '" placeholder="btl, sachet…"></label></div>' +
+      '</select></label><label>Unité de vente<input name="unit" value="' + esc(unitOf(p)) + '" placeholder="bouteille, sachet…"></label></div>' +
+      '<p class="hint">L\'unité, c\'est ce que vous vendez un par un au client : la bouteille pour les boissons, le sachet pour la glace.</p>' +
       '<div class="only-achat row"><label>Unités par casier<input name="perCrate" inputmode="numeric" value="' + p.perCrate + '"></label>' +
         '<label>Prix d\'achat du casier (F)<input name="crateCost" inputmode="numeric" value="' + (p.buy ? Math.round(p.buy * p.perCrate) : '') + '" placeholder="Ex : 7200"></label></div>' +
+      '<p class="hint only-achat">Unités par casier = nombre de bouteilles dans un casier. Comptez-les dans un de vos casiers : le bénéfice en dépend.</p>' +
       '<p class="hint only-made">Les frais de fabrication (eau, sachets…) se notent dans Dépenses : ils sont déduits du bénéfice.</p>' +
       '<div class="row"><label>Prix de vente unitaire (F)<input name="sell" inputmode="numeric" value="' + (p.sell || '') + '" placeholder="Ex : 700"></label>' +
-        '<label>Alerte stock bas (unités)<input name="alert" inputmode="numeric" value="' + p.alert + '"></label></div>' +
+        '<label>Alerte stock bas (en unités)<input name="alert" inputmode="numeric" value="' + p.alert + '"></label></div>' +
       (isNew ? '<p class="hint">Stock que vous avez déjà :</p><div class="row"><label class="only-achat">Réserve (unités)<input name="initReserve" inputmode="numeric" placeholder="0"></label><label>Frigo (unités)<input name="initFridge" inputmode="numeric" placeholder="0"></label></div>' : '') +
+      '<p class="calc" id="pfCalc"></p>' +
       '<button class="btn primary block" type="submit">Enregistrer</button>' +
       (isNew ? '' : '<button class="btn danger block" type="button" data-action="delete-product" data-id="' + p.id + '">Supprimer ce produit</button>') + '</form>');
     const src = $('#pfSource');
     const t = () => { const made = src.value === 'fabrication'; $$('.only-achat').forEach(e => { e.hidden = made; }); $$('.only-made').forEach(e => { e.hidden = !made; }); };
-    src.addEventListener('change', () => { t(); const u = $('[name=unit]'); if (src.value === 'fabrication' && u.value === 'btl') u.value = 'sachet'; });
-    t();
+    const calc = () => {
+      const f = $('#productForm'), made = src.value === 'fabrication', sell = num(f.sell.value);
+      const per = Math.max(1, num(f.perCrate.value)), cost = made ? 0 : num(f.crateCost.value) / per;
+      const u = (f.unit.value || '').trim() || 'bouteille';
+      $('#pfCalc').innerHTML = made ? (sell ? 'Prix de vente : <b>' + money(sell) + '</b> le ' + esc(u) + '.' : '')
+        : (cost || sell ? 'Achat : <b>' + money(cost) + '</b> par ' + esc(u) + ' · vente : <b>' + money(sell) + '</b> · bénéfice : <b class="' + (sell - cost < 0 ? 'neg' : 'pos') + '">' + money(sell - cost) + '</b> par ' + esc(u) + '.' : '');
+    };
+    $('#productForm').addEventListener('input', calc);
+    src.addEventListener('change', () => { calc(); t(); const u = $('[name=unit]'); if (src.value === 'fabrication' && u.value === 'bouteille') u.value = 'sachet'; if (src.value === 'achat' && u.value === 'sachet') u.value = 'bouteille'; });
+    t(); calc();
   }
 
   function productDetail(id) {
@@ -559,7 +573,7 @@
     openModal('<h2>' + esc(p.name) + '</h2>' +
       '<div class="stats">' + (made
         ? '<div class="stat"><span>En stock</span><strong>' + fmtQty(s.fridge, p) + '</strong></div><div class="stat"><span>Prix de vente</span><strong>' + money(p.sell) + '</strong></div>'
-        : '<div class="stat"><span>Réserve</span><strong>' + fmtQty(s.reserve, p) + '</strong></div><div class="stat"><span>Frigo</span><strong>' + s.fridge + ' ' + unitOf(p) + '</strong></div>' +
+        : '<div class="stat"><span>Réserve</span><strong>' + fmtQty(s.reserve, p) + '</strong></div><div class="stat"><span>Frigo</span><strong>' + qtyU(s.fridge, p) + '</strong></div>' +
           '<div class="stat"><span>Achat / unité</span><strong>' + money(p.buy) + '</strong></div><div class="stat"><span>Vente / unité</span><strong>' + money(p.sell) + '</strong></div>') + '</div>' +
       '<p class="hint">' + (made ? 'Fabriqué sur place.' : 'Bénéfice par unité : <b class="' + (p.sell - p.buy < 0 ? 'neg' : 'pos') + '">' + money(p.sell - p.buy) + '</b> · casier de ' + p.perCrate) + '</p>' +
       '<div class="row">' + (made
@@ -587,7 +601,7 @@
     const upd = () => {
       const f = $('#restockForm'), q = product(sel.value);
       const qty = num(f.qCrates && f.qCrates.value) * q.perCrate + num(f.qBottles.value);
-      $('#restockTotal').textContent = qty ? qty + ' ' + unitOf(q) + ' · total ' + money(qty * num(f.crateCost.value) / q.perCrate) : '';
+      $('#restockTotal').textContent = qty ? qtyU(qty, q) + ' · total ' + money(qty * num(f.crateCost.value) / q.perCrate) : '';
     };
     sel.addEventListener('change', () => {
       const q = product(sel.value);
@@ -624,7 +638,7 @@
     const st = computeStocks();
     openModal('<h2>Inventaire (comptage réel)</h2><p class="hint">Comptez et corrigez si besoin. Les différences apparaissent dans le bilan (manquants ou surplus).</p>' +
       '<form class="form" id="inventoryForm"><div class="load-head"><span>Produit</span><span>Réserve</span><span>Frigo</span></div>' +
-      state.products.map(p => '<div class="load-row"><div><b>' + esc(p.name) + '</b><small>en ' + unitOf(p) + '</small></div>' +
+      state.products.map(p => '<div class="load-row"><div><b>' + esc(p.name) + '</b><small>en ' + units(2, p) + '</small></div>' +
         (isMade(p) ? '<span class="muted" style="text-align:center">—</span>' : '<input name="r_' + p.id + '" inputmode="numeric" value="' + st[p.id].reserve + '" aria-label="Réserve ' + esc(p.name) + '">') +
         '<input name="f_' + p.id + '" inputmode="numeric" value="' + st[p.id].fridge + '" aria-label="Frigo ' + esc(p.name) + '"></div>').join('') +
       '<button class="btn primary block" type="submit">Valider l\'inventaire</button></form>');
@@ -860,7 +874,7 @@
       const perCrate = made ? 1 : Math.max(1, num(d.perCrate));
       let p = d.id ? product(d.id) : null; const isNew = !p;
       if (isNew) { p = { id: uid() }; state.products.push(p); }
-      Object.assign(p, { name: d.name.trim(), cat: d.cat, source: d.source, unit: (d.unit || '').trim() || (made ? 'sachet' : 'btl'),
+      Object.assign(p, { name: d.name.trim(), cat: d.cat, source: d.source, unit: (d.unit || '').trim() || (made ? 'sachet' : 'bouteille'),
         perCrate, buy: made ? 0 : num(d.crateCost) / perCrate, sell: num(d.sell), alert: num(d.alert) });
       if (isNew && (num(d.initReserve) || num(d.initFridge))) addMove({ type: 'inventaire', initial: true, productId: p.id, reserveDelta: made ? 0 : num(d.initReserve), fridgeDelta: num(d.initFridge), cost: p.buy });
       save(); render(); productDetail(p.id); toast('Produit enregistré');
