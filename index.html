@@ -15,14 +15,18 @@
     a img { width: 52px; height: 52px; }
     a b { display: block; font-size: 1.1rem; }
     a span { color: var(--muted); font-size: .92rem; }
+    a.main { border: 2px solid #8a4b0f; }
+    .old { font-size: .85rem; margin-top: 20px; }
+    a.small { display: inline; padding: 0; border: 0; background: none; text-decoration: underline; margin: 0 6px 0 0; }
   </style>
 </head>
 <body>
   <main>
     <h1>Francis Telecom</h1>
     <p>Applications de gestion pour commerces du Burkina Faso.</p>
-    <a href="buvette/"><img src="buvette/icon.svg" alt=""><div><b>Ma Buvette</b><span>Stock réserve et frigo, ventes, Orange Money, dépenses, bénéfices</span></div></a>
-    <a href="credit-boutique/"><img src="credit-boutique/icon.svg" alt=""><div><b>Crédit Boutique</b><span>Crédits clients, reliquats, rappels WhatsApp et SMS</span></div></a>
+    <a href="gestion/" class="main"><img src="gestion/icon.svg" alt=""><div><b>Caisse &amp; Crédit</b><span>Caisse, stock réserve et frigo, glace, crédits clients avec rappels WhatsApp/SMS, dépenses, bénéfices</span></div></a>
+    <p class="old">Anciennes versions (vos données y sont récupérées automatiquement par Caisse &amp; Crédit) :
+      <a class="small" href="buvette/">Ma Buvette</a> <a class="small" href="credit-boutique/">Crédit Boutique</a></p>
   </main>
 </body>
 </html>
