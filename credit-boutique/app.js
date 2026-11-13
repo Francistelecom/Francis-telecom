@@ -259,7 +259,8 @@
       var last = c.lastReminderAt ? 'Dernier rappel : ' + fmtDate(c.lastReminderAt) : 'Jamais relancé';
       var actions = c.phone
         ? '<a class="btn whatsapp small" data-remind="whatsapp" data-id="' + c.id + '" href="' + esc(whatsappUrl(c.phone, buildMessage(c, s))) + '" target="_blank" rel="noopener">WhatsApp</a>' +
-          '<a class="btn sms small" data-remind="sms" data-id="' + c.id + '" href="' + esc(smsUrl(c.phone, buildMessage(c, s))) + '">SMS</a>'
+          '<a class="btn sms small" data-remind="sms" data-id="' + c.id + '" href="' + esc(smsUrl(c.phone, buildMessage(c, s))) + '">SMS</a>' +
+          '<button class="btn small" data-action="copy-msg" data-id="' + c.id + '">Copier</button>'
         : '<button class="btn small" data-action="edit-client" data-id="' + c.id + '">Ajouter un numéro</button>';
       return '<li class="item reminder">' +
         '<div class="avatar">' + esc(initials(c.name)) + '</div>' +
@@ -370,7 +371,8 @@
     var msg = buildMessage(c, s);
     var contact = c.phone
       ? '<a class="btn whatsapp" data-remind="whatsapp" data-id="' + c.id + '" href="' + esc(whatsappUrl(c.phone, msg)) + '" target="_blank" rel="noopener">Rappel WhatsApp</a>' +
-        '<a class="btn sms" data-remind="sms" data-id="' + c.id + '" href="' + esc(smsUrl(c.phone, msg)) + '">Rappel SMS</a>'
+        '<a class="btn sms" data-remind="sms" data-id="' + c.id + '" href="' + esc(smsUrl(c.phone, msg)) + '">Rappel SMS</a>' +
+        '<button class="btn" style="grid-column:1/-1" data-action="copy-msg" data-id="' + c.id + '">Copier le message de rappel</button>'
       : '<button class="btn block" style="grid-column:1/-1" data-action="edit-client" data-id="' + c.id + '">Ajouter un numéro pour les rappels</button>';
     openModal(
       '<div class="client-head">' +
@@ -427,14 +429,58 @@
     toast._t = setTimeout(function () { t.hidden = true; }, 2600);
   }
 
-  function download(name, content, type) {
-    var blob = new Blob([content], { type: type });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  // Fenêtre de confirmation intégrée (remplace confirm(), bloqué dans certains navigateurs)
+  function askConfirm(msg, yesLabel, onYes) {
+    var box = $('#confirmBox');
+    $('#confirmMsg').textContent = msg;
+    var yes = $('#confirmYes');
+    yes.textContent = yesLabel || 'Confirmer';
+    box.hidden = false;
+    yes.onclick = function () { box.hidden = true; onYes(); };
+  }
+  function closeConfirm() { $('#confirmBox').hidden = true; }
+
+  function copyText(text, el) {
+    var done = function () { toast('Copié ✔'); };
+    var fallback = function () { if (el) { el.focus(); el.select(); } toast('Sélectionnez le texte puis copiez-le'); };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+      else fallback();
+    } catch (e) { fallback(); }
+  }
+
+  // Propose un fichier : téléchargement + texte à copier (si le téléchargement est bloqué)
+  function offerFile(name, content, type, title) {
+    try {
+      var blob = new Blob([content], { type: type });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    } catch (e) { /* téléchargement impossible : le texte reste disponible ci-dessous */ }
+    openModal(
+      '<h2>' + esc(title) + '</h2>' +
+      '<p class="hint">Si le fichier « ' + esc(name) + ' » ne s\'est pas téléchargé, copiez ce texte et gardez-le (par exemple en vous l\'envoyant sur WhatsApp).</p>' +
+      '<textarea id="exportText" rows="10" readonly>' + esc(content.replace(/^﻿/, '')) + '</textarea>' +
+      '<button class="btn primary block" data-action="copy-export">Copier le texte</button>'
+    );
+  }
+
+  function restoreFrom(text) {
+    var data;
+    try {
+      data = JSON.parse(text);
+      if (!data || !Array.isArray(data.clients) || !Array.isArray(data.txs)) throw new Error('format');
+    } catch (err) {
+      toast('Sauvegarde invalide');
+      return;
+    }
+    askConfirm('Remplacer les données actuelles par cette sauvegarde (' + data.clients.length + ' clients) ?', 'Restaurer', function () {
+      state = { settings: Object.assign(defaultState().settings, data.settings || {}), clients: data.clients, txs: data.txs };
+      save(); render(); renderSettings(); closeModal(); toast('Sauvegarde restaurée');
+    });
   }
 
   function exportCsv() {
@@ -450,7 +496,7 @@
       var c = clientById(t.clientId) || { name: '' };
       lines.push([fmtDate(t.date), c.name, t.type === 'credit' ? 'Crédit' : 'Paiement', t.amount, t.label, t.dueDate ? fmtDate(t.dueDate) : ''].map(q).join(';'));
     });
-    download('credits-' + today() + '.csv', '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+    offerFile('credits-' + today() + '.csv', '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8', 'Export Excel (CSV)');
   }
 
   document.addEventListener('click', function (e) {
@@ -468,6 +514,15 @@
     if (el) {
       var a = el.dataset.action, id = el.dataset.id;
       if (a === 'close-modal') closeModal();
+      else if (a === 'close-confirm') closeConfirm();
+      else if (a === 'copy-export') copyText($('#exportText').value, $('#exportText'));
+      else if (a === 'copy-msg') {
+        var mc = clientById(id);
+        if (mc) { copyText(buildMessage(mc, summary(id))); mc.lastReminderAt = today(); save(); render(); }
+      } else if (a === 'paste-backup') {
+        openModal('<h2>Coller une sauvegarde</h2><p class="hint">Collez ici le texte de sauvegarde copié auparavant.</p>' +
+          '<textarea id="pasteText" rows="10"></textarea><button class="btn primary block" data-action="restore-paste">Restaurer</button>');
+      } else if (a === 'restore-paste') restoreFrom($('#pasteText').value);
       else if (a === 'new-client') clientForm();
       else if (a === 'edit-client') clientForm(clientById(id));
       else if (a === 'new-credit') txForm('credit', id);
@@ -477,25 +532,24 @@
         if (tx) txForm(tx.type, tx.clientId, tx);
       } else if (a === 'delete-tx') {
         var t0 = state.txs.filter(function (t) { return t.id === id; })[0];
-        if (t0 && confirm('Supprimer cette opération de ' + money(t0.amount) + ' ?')) {
+        if (t0) askConfirm('Supprimer cette opération de ' + money(t0.amount) + ' ?', 'Supprimer', function () {
           state.txs = state.txs.filter(function (t) { return t.id !== id; });
           save(); render(); clientDetail(t0.clientId); toast('Opération supprimée');
-        }
+        });
       } else if (a === 'delete-client') {
         var dc = clientById(id);
-        if (dc && confirm('Supprimer ' + dc.name + ' et tout son historique ?')) {
+        if (dc) askConfirm('Supprimer ' + dc.name + ' et tout son historique ?', 'Supprimer', function () {
           state.clients = state.clients.filter(function (c) { return c.id !== id; });
           state.txs = state.txs.filter(function (t) { return t.clientId !== id; });
           save(); render(); closeModal(); toast('Client supprimé');
-        }
+        });
       } else if (a === 'export') {
-        download('sauvegarde-credit-boutique-' + today() + '.json', JSON.stringify(state, null, 2), 'application/json');
-        toast('Sauvegarde téléchargée');
+        offerFile('sauvegarde-credit-boutique-' + today() + '.json', JSON.stringify(state), 'application/json', 'Sauvegarde');
       } else if (a === 'export-csv') exportCsv();
       else if (a === 'reset') {
-        if (confirm('Effacer TOUTES les données ? Faites d\'abord une sauvegarde.') && confirm('Vraiment tout effacer ?')) {
+        askConfirm('Effacer TOUTES les données (clients, crédits, paiements) ? Faites d\'abord une sauvegarde. Cette action est définitive.', 'Tout effacer', function () {
           state = defaultState(); save(); render(); renderSettings(); toast('Données effacées');
-        }
+        });
       }
       return;
     }
@@ -525,20 +579,25 @@
         clientId = nc.id;
       }
       if (!clientById(clientId)) { toast('Choisissez un client'); return; }
-      if (data.type === 'payment' && !data.id) {
-        var bal = summary(clientId).balance;
-        if (amount > bal && !confirm('Ce paiement (' + money(amount) + ') dépasse le reliquat (' + money(bal) + '). Continuer ?')) return;
+      var commit = function () {
+        var tx = data.id ? state.txs.filter(function (t) { return t.id === data.id; })[0] : null;
+        if (!tx) { tx = { id: uid(), createdAt: new Date().toISOString() }; state.txs.push(tx); }
+        tx.clientId = clientId;
+        tx.type = data.type;
+        tx.amount = amount;
+        tx.label = String(data.label || '').trim();
+        tx.date = data.date || today();
+        tx.dueDate = data.type === 'credit' ? (data.dueDate || '') : '';
+        save(); render(); clientDetail(clientId);
+        toast(data.type === 'credit' ? 'Crédit enregistré' : 'Paiement enregistré');
+      };
+      var bal = summary(clientId).balance;
+      if (data.type === 'payment' && !data.id && amount > bal) {
+        save(); render(); // le nouveau client éventuel est déjà créé
+        askConfirm('Ce paiement (' + money(amount) + ') dépasse le reliquat (' + money(bal) + '). Enregistrer quand même ?', 'Enregistrer', commit);
+        return;
       }
-      var tx = data.id ? state.txs.filter(function (t) { return t.id === data.id; })[0] : null;
-      if (!tx) { tx = { id: uid(), createdAt: new Date().toISOString() }; state.txs.push(tx); }
-      tx.clientId = clientId;
-      tx.type = data.type;
-      tx.amount = amount;
-      tx.label = String(data.label || '').trim();
-      tx.date = data.date || today();
-      tx.dueDate = data.type === 'credit' ? (data.dueDate || '') : '';
-      save(); render(); clientDetail(clientId);
-      toast(data.type === 'credit' ? 'Crédit enregistré' : 'Paiement enregistré');
+      commit();
     } else if (formId === 'settingsForm') {
       state.settings.shopName = data.shopName.trim();
       state.settings.ownerName = data.ownerName.trim();
@@ -551,24 +610,18 @@
 
   $('#clientSearch').addEventListener('input', renderClients);
   $('#clientFilter').addEventListener('change', renderClients);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (!$('#confirmBox').hidden) closeConfirm(); else closeModal();
+  });
 
   $('#importFile').addEventListener('change', function (e) {
     var file = e.target.files[0];
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function () {
-      try {
-        var data = JSON.parse(reader.result);
-        if (!data || !Array.isArray(data.clients) || !Array.isArray(data.txs)) throw new Error('format');
-        if (!confirm('Remplacer les données actuelles par cette sauvegarde (' + data.clients.length + ' clients) ?')) return;
-        state = { settings: Object.assign(defaultState().settings, data.settings || {}), clients: data.clients, txs: data.txs };
-        save(); render(); renderSettings(); toast('Sauvegarde restaurée');
-      } catch (err) {
-        toast('Fichier de sauvegarde invalide');
-      } finally {
-        e.target.value = '';
-      }
+      e.target.value = '';
+      restoreFrom(reader.result);
     };
     reader.readAsText(file);
   });

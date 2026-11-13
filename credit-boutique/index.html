@@ -107,6 +107,7 @@
         <label class="btn block file-btn">Restaurer une sauvegarde
           <input type="file" id="importFile" accept="application/json,.json" hidden>
         </label>
+        <button class="btn block" data-action="paste-backup">Coller une sauvegarde (texte)</button>
         <button class="btn block" data-action="export-csv">Exporter en tableau (CSV / Excel)</button>
         <button class="btn danger block" data-action="reset">Tout effacer</button>
       </div>
@@ -126,6 +127,17 @@
     <div class="modal-box" role="dialog" aria-modal="true">
       <button class="modal-close" data-action="close-modal" aria-label="Fermer">×</button>
       <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <div class="modal confirm" id="confirmBox" hidden>
+    <div class="modal-backdrop" data-action="close-confirm"></div>
+    <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmMsg">
+      <p id="confirmMsg"></p>
+      <div class="grid-actions">
+        <button class="btn" data-action="close-confirm">Annuler</button>
+        <button class="btn danger" id="confirmYes">Confirmer</button>
+      </div>
     </div>
   </div>
 
